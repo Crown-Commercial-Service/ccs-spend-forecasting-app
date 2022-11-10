@@ -1,0 +1,9 @@
+{
+	"name": "Development-ccs-import-factory",
+	"location": "uksouth",
+	"identity": {
+		"type": "SystemAssigned",
+		"principalId": "7d1588fc-82dd-4ff5-acb3-17b9f3568645",
+		"tenantId": "9f8c0d79-3e87-4cd3-9799-c3443146ea5e"
+	}
+}

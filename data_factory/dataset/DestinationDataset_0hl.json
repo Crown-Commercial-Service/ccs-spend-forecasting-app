@@ -1,0 +1,23 @@
+{
+	"name": "DestinationDataset_0hl",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "Development-storage-connection",
+			"type": "LinkedServiceReference"
+		},
+		"annotations": [],
+		"type": "DelimitedText",
+		"typeProperties": {
+			"location": {
+				"type": "AzureBlobStorageLocation",
+				"fileName": "test",
+				"container": "azp-uks-spend-forecasting-development"
+			},
+			"columnDelimiter": ",",
+			"escapeChar": "\\",
+			"quoteChar": "\""
+		},
+		"schema": []
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}

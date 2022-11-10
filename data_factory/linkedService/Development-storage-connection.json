@@ -1,0 +1,11 @@
+{
+	"name": "Development-storage-connection",
+	"type": "Microsoft.DataFactory/factories/linkedservices",
+	"properties": {
+		"type": "AzureBlobStorage",
+		"typeProperties": {
+			"serviceEndpoint": "https://developmentstorageccs.blob.core.windows.net"
+		},
+		"annotations": []
+	}
+}
