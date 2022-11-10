@@ -1,0 +1,22 @@
+{
+	"name": "DestinationDataset_3lm",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "Development-storage-connection",
+			"type": "LinkedServiceReference"
+		},
+		"annotations": [],
+		"type": "DelimitedText",
+		"typeProperties": {
+			"location": {
+				"type": "AzureBlobStorageLocation",
+				"fileName": "test2",
+				"container": "azp-uks-spend-forecasting-development"
+			},
+			"columnDelimiter": ",",
+			"escapeChar": "\\",
+			"quoteChar": "\""
+		},
+		"schema": []
+	}
+}
