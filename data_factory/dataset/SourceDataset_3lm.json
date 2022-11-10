@@ -1,0 +1,311 @@
+{
+	"name": "SourceDataset_3lm",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "Development-sql-connection",
+			"type": "LinkedServiceReference"
+		},
+		"annotations": [],
+		"type": "AzureSqlTable",
+		"schema": [
+			{
+				"name": "RecordID",
+				"type": "int",
+				"precision": 10
+			},
+			{
+				"name": "RecordInsertedDate",
+				"type": "datetime",
+				"precision": 23,
+				"scale": 3
+			},
+			{
+				"name": "OpportunitySalesforceID",
+				"type": "varchar"
+			},
+			{
+				"name": "OpportunityKey",
+				"type": "int",
+				"precision": 10
+			},
+			{
+				"name": "Name",
+				"type": "varchar"
+			},
+			{
+				"name": "StageName",
+				"type": "varchar"
+			},
+			{
+				"name": "Amount",
+				"type": "money",
+				"precision": 19,
+				"scale": 4
+			},
+			{
+				"name": "Probability",
+				"type": "decimal",
+				"precision": 10,
+				"scale": 5
+			},
+			{
+				"name": "StartDate",
+				"type": "datetime",
+				"precision": 23,
+				"scale": 3
+			},
+			{
+				"name": "ContractCloseDate",
+				"type": "datetime",
+				"precision": 23,
+				"scale": 3
+			},
+			{
+				"name": "Type",
+				"type": "varchar"
+			},
+			{
+				"name": "NextStep",
+				"type": "varchar"
+			},
+			{
+				"name": "LeadSource",
+				"type": "varchar"
+			},
+			{
+				"name": "IsClosed",
+				"type": "varchar"
+			},
+			{
+				"name": "IsWon",
+				"type": "varchar"
+			},
+			{
+				"name": "ForecastCategory",
+				"type": "varchar"
+			},
+			{
+				"name": "ForecastCategoryName",
+				"type": "varchar"
+			},
+			{
+				"name": "CampaignID",
+				"type": "varchar"
+			},
+			{
+				"name": "HasOpportunityLineItem",
+				"type": "varchar"
+			},
+			{
+				"name": "CreatedDate",
+				"type": "datetime",
+				"precision": 23,
+				"scale": 3
+			},
+			{
+				"name": "LastModifiedDate",
+				"type": "datetime",
+				"precision": 23,
+				"scale": 3
+			},
+			{
+				"name": "FiscalQuarter",
+				"type": "int",
+				"precision": 10
+			},
+			{
+				"name": "FiscalYear",
+				"type": "int",
+				"precision": 10
+			},
+			{
+				"name": "FiscalYearMonth",
+				"type": "varchar"
+			},
+			{
+				"name": "LastViewedDate",
+				"type": "datetime",
+				"precision": 23,
+				"scale": 3
+			},
+			{
+				"name": "LastReferencedDate",
+				"type": "datetime",
+				"precision": 23,
+				"scale": 3
+			},
+			{
+				"name": "HasOpenActivity",
+				"type": "varchar"
+			},
+			{
+				"name": "HasOverDueTask",
+				"type": "varchar"
+			},
+			{
+				"name": "NewDemand",
+				"type": "varchar"
+			},
+			{
+				"name": "DBCompetitor",
+				"type": "varchar"
+			},
+			{
+				"name": "AccountOwner",
+				"type": "varchar"
+			},
+			{
+				"name": "RecordOwner",
+				"type": "varchar"
+			},
+			{
+				"name": "CreatedBy",
+				"type": "varchar"
+			},
+			{
+				"name": "CustomerKey",
+				"type": "int",
+				"precision": 10
+			},
+			{
+				"name": "CustomerName",
+				"type": "varchar"
+			},
+			{
+				"name": "Sector",
+				"type": "varchar"
+			},
+			{
+				"name": "Group",
+				"type": "varchar"
+			},
+			{
+				"name": "PrimaryFunction",
+				"type": "varchar"
+			},
+			{
+				"name": "Detail",
+				"type": "varchar"
+			},
+			{
+				"name": "NutsRegion2",
+				"type": "varchar"
+			},
+			{
+				"name": "NutsRegion",
+				"type": "varchar"
+			},
+			{
+				"name": "Pillar",
+				"type": "varchar"
+			},
+			{
+				"name": "FrameworkSalesforceID",
+				"type": "varchar"
+			},
+			{
+				"name": "FrameworkKey",
+				"type": "int",
+				"precision": 10
+			},
+			{
+				"name": "FrameworkNumber",
+				"type": "varchar"
+			},
+			{
+				"name": "FrameworkName",
+				"type": "varchar"
+			},
+			{
+				"name": "FrameworkStatus",
+				"type": "varchar"
+			},
+			{
+				"name": "FrameworkStartDate",
+				"type": "datetime",
+				"precision": 23,
+				"scale": 3
+			},
+			{
+				"name": "FrameworkOriginalEndDate",
+				"type": "datetime",
+				"precision": 23,
+				"scale": 3
+			},
+			{
+				"name": "FrameworkNewEndDate",
+				"type": "datetime",
+				"precision": 23,
+				"scale": 3
+			},
+			{
+				"name": "LotNumber",
+				"type": "varchar"
+			},
+			{
+				"name": "AssistedProcurement",
+				"type": "varchar"
+			},
+			{
+				"name": "Project",
+				"type": "varchar"
+			},
+			{
+				"name": "OpportunityTypeStatus",
+				"type": "varchar"
+			},
+			{
+				"name": "ParentOpportunityID",
+				"type": "varchar"
+			},
+			{
+				"name": "IsParentOpportunity",
+				"type": "varchar"
+			},
+			{
+				"name": "OpportunityURN",
+				"type": "varchar"
+			},
+			{
+				"name": "CCSCategory",
+				"type": "varchar"
+			},
+			{
+				"name": "SupplierAwarded",
+				"type": "varchar"
+			},
+			{
+				"name": "Likelihood",
+				"type": "varchar"
+			},
+			{
+				"name": "CustomerReference",
+				"type": "varchar"
+			},
+			{
+				"name": "Stage0Date",
+				"type": "date"
+			},
+			{
+				"name": "Stage1Date",
+				"type": "date"
+			},
+			{
+				"name": "Stage2Date",
+				"type": "date"
+			},
+			{
+				"name": "Stage3Date",
+				"type": "date"
+			},
+			{
+				"name": "Stage4Date",
+				"type": "date"
+			}
+		],
+		"typeProperties": {
+			"schema": "dbo",
+			"table": "Opportunities"
+		}
+	}
+}
