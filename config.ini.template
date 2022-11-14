@@ -1,0 +1,12 @@
+# Specify all the configurations to be used by this app.
+
+# Specify database configuration for the Spend Forecast database.
+[database]
+dialect = <Dialect or database e.g. mssql or mysql>
+server = <Database server name>
+port = <Database port>
+name = <Database name>
+user = <Database username>
+password = <Database password>
+driver = <Database driver e.g. ODBC Driver 17 for SQL Server>
+pool_size = <Inger specifying pool size, e.g. 10>
