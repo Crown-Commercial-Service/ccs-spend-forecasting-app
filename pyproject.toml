@@ -1,0 +1,24 @@
+[tool.poetry]
+name = "ccs-spend-forecasting-app"
+version = "0.1.0"
+description = ""
+authors = ["g-bhardwaj <12960909+g-bhardwaj@users.noreply.github.com>"]
+readme = "README.md"
+packages = [{include = "ccs_spend_forecasting_app"}]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+sqlalchemy = "^1.4.44"
+pyodbc = "^4.0.34"
+matplotlib = "^3.6.2"
+pandas = "^1.5.1"
+scikit-learn = "^1.1.3"
+statsmodels = "^0.13.5"
+pyspark = "^3.3.1"
+pyarrow = "^10.0.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
