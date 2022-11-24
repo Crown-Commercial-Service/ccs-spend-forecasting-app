@@ -10,5 +10,7 @@ user = <Database username>
 password = <Database password>
 driver = <Database driver e.g. ODBC Driver 17 for SQL Server>
 pool_size = <Inger specifying pool size, e.g. 10>
-blob_access_key = <azure blob account access key>
-blob_account_name = <blob account name>
+
+[blob]
+access_key = <azure blob account access key. Can be retrieved by calling command line `az storage account keys list --account-name {blob_account_name} -o json | jq ".[0].value"`>
+account_name = <blob account name>
