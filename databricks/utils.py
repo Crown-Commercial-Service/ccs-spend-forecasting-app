@@ -1,6 +1,7 @@
 import os
 from typing import Optional
 from configparser import ConfigParser
+from datetime import date
 
 from azure.identity import DefaultAzureCredential, ClientSecretCredential
 from azure.storage.blob import BlobServiceClient
@@ -25,6 +26,17 @@ def get_default_blob_account_name() -> str:
         account_name = 'developmentstorageccs'
     
     return account_name
+
+
+def get_default_blob_container_name() -> str:
+    config = load_config()
+    try:
+        container_name = config.get('blob', 'container_name')
+    except:
+        container_name = 'azp-uks-spend-forecasting-development-transformed'
+
+    return container_name
+
 
 def get_spark_session() -> SparkSession:
     spark_found = SparkSession.getActiveSession()
@@ -77,7 +89,7 @@ def get_blob_service_client(storage_account_name: Optional[str]= None):
 
 def get_blob_container_client(container_name: Optional[str] = None, storage_account_name: Optional[str]= None):
     if not container_name:
-        container_name = 'azp-uks-spend-forecasting-development-transformed'
+        container_name = get_default_blob_container_name()
 
     service_client = get_blob_service_client(storage_account_name)
     return service_client.get_container_client(container_name)
@@ -123,7 +135,7 @@ def connect_databricks_spark_to_blob_storage(storage_account_name: str):
     spark = get_spark_session()
 
     if not storage_account_name:
-        storage_account_name = "developmentstorageccs"
+        storage_account_name = get_default_blob_account_name()
 
     secret = load_secret(key="application_password")
     client_id = load_secret(key="client_id")
@@ -169,9 +181,10 @@ def connect_local_spark_to_blob_storage(storage_account_name):
     return spark
 
 
-def get_latest_blob_path_for_table(table_name: str, container_client = None) -> Optional[str]:
-    if not container_client:
-        container_client = get_blob_container_client()
+def get_latest_blob_path_for_table(table_name: str, container_name: Optional[str] = None) -> Optional[str]:
+    if not container_name:
+        container_name = get_default_blob_container_name()
+    container_client = get_blob_container_client(container_name=container_name)
     
     candidates = [blob for blob in container_client.list_blobs() if blob.name and blob.name.endswith(f"{table_name}.parquet")]
     if not candidates:
@@ -189,10 +202,39 @@ def get_latest_blob_path_for_table(table_name: str, container_client = None) -> 
         return f"wasbs://{container_name}@{account_name}.blob.core.windows.net/{blob_file_name}"
 
 
-def load_latest_blob_to_pyspark(table_name: str) -> DataFrame:
+def load_latest_blob_to_pyspark(table_name: str, blob_container_name : Optional[str] = None) -> DataFrame:
     spark = get_spark_session()
+    if not blob_container_name:
+        blob_container_name = get_default_blob_container_name()
     
-    parquet_path = get_latest_blob_path_for_table(table_name)
+    parquet_path = get_latest_blob_path_for_table(table_name, container_name=blob_container_name)
     if not parquet_path:
         raise ValueError(f'Could not find a blob file of the table {table_name}')
     return spark.read.parquet(parquet_path)
+
+
+def make_blob_storage_path(table_name: str, blob_container_name: Optional[str] = None, blob_account_name: Optional[str] = None) -> str:
+    """ Make a blob storage path dated today with given details"""
+    today = date.today()
+
+    if not blob_account_name:
+        blob_account_name = get_default_blob_account_name()
+
+    if not blob_container_name:
+        blob_container_name = get_default_blob_container_name()
+
+    if is_running_in_databricks():
+        return f"abfss://{blob_container_name}@{blob_account_name}.dfs.core.windows.net/{table_name}/year={today.year}/month={today.month}/day={today.day}/{table_name}.parquet"
+    else:
+        return f"wasbs://{blob_container_name}@{blob_account_name}.blob.core.windows.net/{table_name}/year={today.year}/month={today.month}/day={today.day}/{table_name}.parquet"
+
+
+def save_dataframe_to_blob(df: DataFrame, table_name:str, blob_storage_path:Optional[str] = None, overwrite: bool = True):
+    """Save a pyspark dataframe to blob storage in parquet format"""
+    if not blob_storage_path:
+        blob_storage_path = make_blob_storage_path(table_name=table_name)
+    
+    if overwrite:
+        df.write.parquet(blob_storage_path,mode='overwrite')
+    else:
+        df.write.parquet(blob_storage_path)
