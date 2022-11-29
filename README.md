@@ -23,3 +23,11 @@ Below are steps describe how to get started:
    2. Log file size: Second parameter describes the size of log file in bytes. By default, it is 5MB.
    3. Number of log files: Third parameter describes number of log files before it is rolled. By default, it is 3.
 
+
+
+### Testing
+The unit test of this repo is located in `test` directory. You can use the below command in a terminal to run the full test suite:
+
+```shell
+python -m unittest discover -p '*_test.py' -s test
+```
