@@ -1,10 +1,4 @@
 from pyspark.sql import DataFrame, functions as F
-from pipeline.utils import (
-    connect_spark_to_blob_storage,
-    load_latest_blob_to_pyspark,
-    make_blob_storage_path,
-    save_dataframe_to_blob,
-)
 
 
 def fill_blanks_with_zeros(
@@ -42,11 +36,18 @@ def fill_blanks_with_zeros(
 
 
 def fill_missing_months_for_transformed_spend(
-    input_table_name: str = "TransformedSpendData",
-    output_table_name: str = "SpendDataFilledMissingMonth",
-    container_name: str = "azp-uks-spend-forecasting-development-transformed",
+    input_table_name: str,
+    output_table_name: str,
+    container_name: str = "",
 ):
     """Actual function that carry out the transformation step in pipeline"""
+
+    from pipeline.utils import (
+        connect_spark_to_blob_storage,
+        load_latest_blob_to_pyspark,
+        make_blob_storage_path,
+        save_dataframe_to_blob,
+    )
 
     connect_spark_to_blob_storage()
     input_df = load_latest_blob_to_pyspark(
