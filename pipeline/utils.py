@@ -9,11 +9,20 @@ from pyspark.sql import SparkSession, DataFrame
 
 
 def is_running_in_databricks() -> bool:
-    """Detect whether the current enviroment is in databricks"""
+    """Detect whether the current enviroment is in databricks
+
+    Returns:
+        bool: A boolean value. True means that the current enviroment is in databricks
+    """
     return "DATABRICKS_RUNTIME_VERSION" in os.environ
 
 
-def load_config():
+def load_config() -> ConfigParser:
+    """Loads the default config file from local file"config.ini"
+
+    Returns:
+        ConfigParser: An object that represent the config stored.
+    """
     config = ConfigParser()
     config.read("config.ini")
     return config
@@ -21,20 +30,18 @@ def load_config():
 
 def get_default_blob_account_name() -> str:
     config = load_config()
-    try:
-        account_name = config.get("blob", "account_name")
-    except:
-        account_name = "developmentstorageccs"
+    account_name = config.get("blob", "account_name", fallback="developmentstorageccs")
 
     return account_name
 
 
 def get_default_blob_container_name() -> str:
     config = load_config()
-    try:
-        container_name = config.get("blob", "container_name")
-    except:
-        container_name = "azp-uks-spend-forecasting-development-transformed"
+    container_name = config.get(
+        "blob",
+        "container_name",
+        fallback="azp-uks-spend-forecasting-development-transformed",
+    )
 
     return container_name
 
@@ -48,6 +55,11 @@ def get_spark_session() -> SparkSession:
 
 
 def get_dbutils():
+    """Retreive the dbutils object. Provide access to dbutils.secret which is otherwise only available in notebook.
+
+    Returns:
+        The pre-defined dbutils object of Databricks
+    """
     if not is_running_in_databricks():
         raise RuntimeError(
             "not running in databricks. dbutils is not available in local enviroment"
@@ -60,8 +72,16 @@ def get_dbutils():
     return dbutils
 
 
-def load_secret(key: str, scope=None) -> str:
-    """load a secret from databricks secret"""
+def load_secret(key: str, scope: Optional[str] = None) -> str:
+    """Load a secret from databricks secret
+
+    Args:
+        key (str): Key of the said secret
+        scope (str, optional): A string that represent the secret scope. If not given, will try to use a predefined scope.
+
+    Returns:
+        str: A string value that represent the secret
+    """
     if not scope:
         scope = "AzP-UKS-Spend-Forecasting-Development-scope"
 
@@ -70,8 +90,17 @@ def load_secret(key: str, scope=None) -> str:
     return dbutils.secrets.get(scope=scope, key=key)
 
 
-def get_azure_credential(scope=None):
-    """Return a azure credentials object. Used for accessing blob storage with Azure blob client."""
+def get_azure_credential(scope: Optional[str] = None):
+    """Return a azure credentials object. Used for accessing blob storage with Azure blob client.
+        If run in Databricks, it will try to retrieve the necessary information from Databricks secrets.
+        Otherwise, it will try to use the DefaultAzureCredential() method to authenticate.
+
+    Args:
+        scope (Optional[str], optional): A string that represent the secret scope. If not given, will try to use a predefined scope.
+
+    Returns:
+        An Azure credential object to authenticate blob storage access.
+    """
     if is_running_in_databricks():
         secret = load_secret(key="application_password", scope=scope)
         client_id = load_secret(key="client_id", scope=scope)
@@ -84,6 +113,14 @@ def get_azure_credential(scope=None):
 
 
 def get_blob_service_client(storage_account_name: Optional[str] = None):
+    """Return a blob storage client object for given storage account name
+
+    Args:
+        storage_account_name (str): Storage account name. If not given, will try to use a predefined account name.
+
+    Returns:
+        A blob storage client object
+    """
     if not storage_account_name:
         storage_account_name = get_default_blob_account_name()
     account_url = f"https://{storage_account_name}.blob.core.windows.net"
@@ -93,6 +130,15 @@ def get_blob_service_client(storage_account_name: Optional[str] = None):
 def get_blob_container_client(
     container_name: Optional[str] = None, storage_account_name: Optional[str] = None
 ):
+    """Return a blob container client object for given storage account name
+
+    Args:
+        container_name (str): Storage container name. If not given, will try to use a predefined container name.
+        storage_account_name (str): Storage account name. If not given, will try to use a predefined account name.
+
+    Returns:
+        A blob container client object
+    """
     if not container_name:
         container_name = get_default_blob_container_name()
 
@@ -101,7 +147,11 @@ def get_blob_container_client(
 
 
 def create_spark_session_for_local() -> SparkSession:
-    """Create a spark session for local usage. Will try to retrieve jar packages of Azure Blob / MS SQL Server driver"""
+    """Create a spark session for local usage. Will try to retrieve jar packages of Azure Blob / MS SQL Server driver
+
+    Returns:
+        SparkSession: A spark session with ability to connect to Azure Blob Storage or MS SQL Server
+    """
     jar_packages = [
         "org.apache.hadoop:hadoop-azure:3.3.4",
         "com.microsoft.sqlserver:mssql-jdbc:11.2.1.jre8",
@@ -127,6 +177,14 @@ def create_spark_session_for_local() -> SparkSession:
 
 
 def connect_spark_to_blob_storage(storage_account_name: Optional[str] = None):
+    """Connect the current spark session to Azure blob storage.
+    If called in Databricks, it will try to get the necessary authentication from Databricks secrets.
+    If called in a local environment, it will try to get necessary authentication from the local file 'config.ini'
+
+    Args:
+        storage_account_name (str): The blob storage account name to connect to.
+
+    """
     if not storage_account_name:
         storage_account_name = get_default_blob_account_name()
 
@@ -188,7 +246,18 @@ def connect_local_spark_to_blob_storage(storage_account_name):
 
 def get_latest_blob_path_for_table(
     table_name: str, container_name: Optional[str] = None
-) -> Optional[str]:
+) -> str:
+    """Retrieve the Azure blob uri path for the latest version of given table name.
+    In a Databricks enviroment, it will try to use the abfss:// protocol.
+    Otherwise, it will try to use the wasbs:// protocol.
+
+    Args:
+        table_name (str): The table name of the file to retrieve. It is assumed that the given blob storage should contain at least one copy of parquet file with this name.
+        container_name (str): The blob container name to retrieve file from.
+
+    Returns:
+        A string that represent the uri of a blob file. Can be read by a pyspark session.
+    """
     if not container_name:
         container_name = get_default_blob_container_name()
     container_client = get_blob_container_client(container_name=container_name)
@@ -216,6 +285,15 @@ def get_latest_blob_path_for_table(
 def load_latest_blob_to_pyspark(
     table_name: str, blob_container_name: Optional[str] = None
 ) -> DataFrame:
+    """Retrieve the latest version of given table name from blob storage, and load it as a spark Dataframe
+
+    Args:
+        table_name (str): The table name of the file to retrieve e.g. "Customers" It is assumed that the given blob storage should contain at least one copy of parquet file with this name.
+        blob_container_name (str): The blob container name to retrieve file from.
+
+    Returns:
+        DataFrame: A spark Dataframe of the given table name
+    """
     spark = get_spark_session()
     if not blob_container_name:
         blob_container_name = get_default_blob_container_name()
@@ -233,7 +311,18 @@ def make_blob_storage_path(
     blob_container_name: Optional[str] = None,
     blob_account_name: Optional[str] = None,
 ) -> str:
-    """Make a blob storage path dated today with given details"""
+    """Make a blob storage path dated today with given details.
+    For example, if today is "2022-11-28" and table_name is "Customers", it will generate a filename like this:
+    "Customers/year=2022/month=11/day=28/Customers.parquet"
+
+    Args:
+        table_name (str):
+        blob_container_name (Optional[str], optional): _description_. Defaults to None.
+        blob_account_name (Optional[str], optional): _description_. Defaults to None.
+
+    Returns:
+        str: A string that represent the uri of a blob file
+    """
     today = date.today()
 
     if not blob_account_name:

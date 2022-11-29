@@ -2,7 +2,7 @@ from base_test import ReusableSparkTestCase
 import datetime
 from pyspark.sql import Row
 
-from pipeline.jobs.fill_missing_months import fill_blanks_with_zeros
+from pipeline.jobs.fill_missing_months import add_missing_months
 
 
 class FillMissingMonths(ReusableSparkTestCase):
@@ -25,7 +25,7 @@ class FillMissingMonths(ReusableSparkTestCase):
         # fmt: on
         return df
 
-    def test_fill_blanks_with_zeros_basic(self):
+    def test_add_missing_months_basic(self):
         """Basic test case, not considering MarketSector or Category. Just fill in missing months with zero rows"""
 
         input_df = self.make_sample_test_data()
@@ -54,7 +54,7 @@ class FillMissingMonths(ReusableSparkTestCase):
             # fmt: on
         )
 
-        actual = fill_blanks_with_zeros(
+        actual = add_missing_months(
             input_df,
             date_column="SpendMonth",
             amount_column="EvidencedSpend",
@@ -76,7 +76,7 @@ class FillMissingMonths(ReusableSparkTestCase):
             data=input_df.toPandas(), schema=input_df.schema
         )
 
-        fill_blanks_with_zeros(
+        add_missing_months(
             input_df,
             date_column="SpendMonth",
             amount_column="EvidencedSpend",
@@ -96,7 +96,7 @@ class FillMissingMonths(ReusableSparkTestCase):
 
         columns_to_consider = ["MarketSector", "Category"]
 
-        actual = fill_blanks_with_zeros(
+        actual = add_missing_months(
             input_df,
             date_column="SpendMonth",
             amount_column="EvidencedSpend",
@@ -105,7 +105,7 @@ class FillMissingMonths(ReusableSparkTestCase):
 
         assert actual.columns == expected_columns
 
-    def test_fill_blanks_with_zeros_with_marketsector_and_category(self):
+    def test_add_missing_months_with_marketsector_and_category(self):
         """Advanced test case, considering MarketSector and Category"""
         input_df = self.make_sample_test_data()
         columns_to_consider = ["MarketSector", "Category"]
@@ -140,7 +140,7 @@ class FillMissingMonths(ReusableSparkTestCase):
             # fmt: on
         )
 
-        actual = fill_blanks_with_zeros(
+        actual = add_missing_months(
             input_df,
             date_column="SpendMonth",
             amount_column="EvidencedSpend",
@@ -152,7 +152,7 @@ class FillMissingMonths(ReusableSparkTestCase):
         diff = actual.exceptAll(expected)
         assert diff.isEmpty() == True
 
-    def test_fill_blanks_with_zeros_with_marketsector_and_Subcategory(self):
+    def test_add_missing_months_with_marketsector_and_Subcategory(self):
         """Advanced test case, considering MarketSector and SubCategory"""
 
         input_df = self.make_sample_test_data()
@@ -187,7 +187,7 @@ class FillMissingMonths(ReusableSparkTestCase):
             # fmt: on
         )
 
-        actual = fill_blanks_with_zeros(
+        actual = add_missing_months(
             input_df,
             date_column="SpendMonth",
             amount_column="EvidencedSpend",
