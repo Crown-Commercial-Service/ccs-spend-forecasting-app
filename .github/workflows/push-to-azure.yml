@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     environment: Development
     steps:
+    - name: 'Checkout repo'
+      uses: actions/checkout@v3
     - name: 'Az CLI login'
       uses: azure/login@v1
       with:
@@ -25,4 +27,5 @@ jobs:
       run: |
           export DATABRICKS_AAD_TOKEN=$(az account get-access-token --resource 2ff814a6-3304-4ab8-85cb-cd0e6f879c1d | jq .accessToken --raw-output)
           databricks configure --aad-token --host ${{ secrets.DATABRICKS_HOSTNAME }}
-          databricks fs ls dbfs:/tmp --absolute -l
+          dbfs rm --recursive dbfs:/pipeline
+          dbfs cp pipeline --recursive dbfs:/pipeline
