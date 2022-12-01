@@ -27,9 +27,14 @@ def create_mock_forecast(
     """
 
     # get the row of latest month for each combination
-    latest_month_rows = input_df.groupBy(columns_to_consider).agg(
-        F.max(date_column).alias(date_column),
-        F.max_by(amount_column, date_column).alias(amount_column),
+    latest_month_rows = (
+        input_df.groupBy(*columns_to_consider, date_column)
+        .agg(F.sum(amount_column).alias(amount_column))
+        .groupBy(columns_to_consider)
+        .agg(
+            F.max(date_column).alias(date_column),
+            F.sum(amount_column).alias(amount_column),
+        )
     )
 
     if not start_month:
