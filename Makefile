@@ -8,4 +8,4 @@ format_check:
 	poetry run black . --check
 
 lint:
-	poetry run pylint test
+	poetry run pylint pipeline test
