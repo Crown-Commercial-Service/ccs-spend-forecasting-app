@@ -4,7 +4,7 @@ version = "0.1.0"
 description = ""
 authors = ["g-bhardwaj <12960909+g-bhardwaj@users.noreply.github.com>"]
 readme = "README.md"
-packages = [{include = "ccs_spend_forecasting_app"}]
+# packages = [{include = "ccs_spend_forecasting_app"}]
 
 [tool.poetry.dependencies]
 python = "^3.9"
