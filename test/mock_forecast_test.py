@@ -21,8 +21,8 @@ class MockForecastTest(ReusableSparkTestCase):
         )
 
         expected_forecast_period = [
-            datetime.date(2022, 4, 1) + relativedelta(months=m)
-            for m in range(1, 12 + 1)
+            datetime.date.today().replace(day=1) + relativedelta(months=m + 1)
+            for m in range(12)
         ]
 
         expected_column_names = [
@@ -54,12 +54,12 @@ class MockForecastTest(ReusableSparkTestCase):
             data=[
                 Row(SpendMonth=datetime.date(2022, 1, 1), Category='Construction', MarketSector='Health', EvidencedSpend=1234.0),
                 Row(SpendMonth=datetime.date(2022, 2, 1), Category='Construction', MarketSector='Health', EvidencedSpend=1234.0),
-                Row(SpendMonth=datetime.date(2022, 1, 1), Category='Construction', MarketSector='Infrastructure', EvidencedSpend=2234.0),
-                Row(SpendMonth=datetime.date(2022, 2, 1), Category='Construction', MarketSector='Infrastructure', EvidencedSpend=2234.0),
-                Row(SpendMonth=datetime.date(2022, 7, 1), Category='Workplace', MarketSector='Health', EvidencedSpend=3456.12),
-                Row(SpendMonth=datetime.date(2022, 8, 1), Category='Workplace', MarketSector='Health', EvidencedSpend=3456.12),
-                Row(SpendMonth=datetime.date(2022, 9, 1), Category='Workplace', MarketSector='Infrastructure', EvidencedSpend=876.5),
-                Row(SpendMonth=datetime.date(2022, 10, 1), Category='Workplace', MarketSector='Infrastructure', EvidencedSpend=876.5),
+                Row(SpendMonth=datetime.date(2022, 3, 1), Category='Construction', MarketSector='Infrastructure', EvidencedSpend=2234.0),
+                Row(SpendMonth=datetime.date(2022, 4, 1), Category='Construction', MarketSector='Infrastructure', EvidencedSpend=2234.0),
+                Row(SpendMonth=datetime.date(2022, 5, 1), Category='Workplace', MarketSector='Health', EvidencedSpend=3456.12),
+                Row(SpendMonth=datetime.date(2022, 6, 1), Category='Workplace', MarketSector='Health', EvidencedSpend=3456.12),
+                Row(SpendMonth=datetime.date(2022, 7, 1), Category='Workplace', MarketSector='Education', EvidencedSpend=876.5),
+                Row(SpendMonth=datetime.date(2022, 8, 1), Category='Workplace', MarketSector='Education', EvidencedSpend=876.5),
             ]
             # fmt: on
         )
@@ -74,23 +74,23 @@ class MockForecastTest(ReusableSparkTestCase):
             {
                 "Category": "Construction",
                 "MarketSector": "Health",
-                "start_month": datetime.date(2022, 3, 1),
             },
             {
                 "Category": "Construction",
                 "MarketSector": "Infrastructure",
-                "start_month": datetime.date(2022, 3, 1),
             },
             {
                 "Category": "Workplace",
                 "MarketSector": "Health",
-                "start_month": datetime.date(2022, 9, 1),
             },
             {
                 "Category": "Workplace",
-                "MarketSector": "Infrastructure",
-                "start_month": datetime.date(2022, 11, 1),
+                "MarketSector": "Education",
             },
+        ]
+        expected_forecast_period = [
+            datetime.date.today().replace(day=1) + relativedelta(months=m + 1)
+            for m in range(12)
         ]
 
         actual = create_mock_forecast(
@@ -110,11 +110,6 @@ class MockForecastTest(ReusableSparkTestCase):
                 & (F.col("MarketSector") == combination["MarketSector"])
             )
             assert forecasts_of_this_combination.count() == 12
-
-            expected_forecast_period = [
-                combination["start_month"] + relativedelta(months=m) for m in range(12)
-            ]
-
             for date in expected_forecast_period:
                 assert (
                     forecasts_of_this_combination.filter(
@@ -123,27 +118,52 @@ class MockForecastTest(ReusableSparkTestCase):
                     == 1
                 )
 
-    def test_handle_invalid_date(self):
-        """Test that an error will be raise if the value in date column is not valid"""
+    def test_forecast_for_given_start_month(self):
+
         input_df = self.spark.createDataFrame(
+            # fmt: off
             data=[
-                Row(
-                    SpendMonth="Null",
-                    Category="Test Category",
-                    MarketSector="Health",
-                    EvidencedSpend=1234.0,
-                ),
+                Row(SpendMonth=datetime.date(2022, 1, 1), Category='Workplace', MarketSector='Health', EvidencedSpend=1234.0),
             ]
+            # fmt: on
+        )
+        start_month = datetime.date(2024, 10, 1)
+        expected_forecast_period = [
+            datetime.date(2024, m, 1) for m in range(10, 12 + 1)
+        ] + [datetime.date(2025, m, 1) for m in range(1, 10)]
+
+        actual = create_mock_forecast(
+            input_df=input_df,
+            months_to_forecast=12,
+            columns_to_consider=["Category", "MarketSector"],
+            start_month=start_month,
         )
 
-        with self.assertRaises(ValueError):
-            create_mock_forecast(
-                input_df=input_df,
-                months_to_forecast=12,
-                columns_to_consider=["Category", "MarketSector"],
-                date_column="SpendMonth",
-                amount_column="EvidencedSpend",
-            )
+        assert actual.count() == 12
+
+        dates_in_output_df = [row["SpendMonth"] for row in actual.collect()]
+        assert sorted(dates_in_output_df) == expected_forecast_period
+
+    def test_forecast_period_of_non_12_months(self):
+        input_df = self.spark.createDataFrame(
+            # fmt: off
+            data=[
+                Row(SpendMonth=datetime.date(2022, 1, 1), Category='Workplace', MarketSector='Health', EvidencedSpend=1234.0),
+                Row(SpendMonth=datetime.date(2022, 2, 1), Category='Workplace', MarketSector='Health', EvidencedSpend=0.0),
+                Row(SpendMonth=datetime.date(2022, 3, 1), Category='Workplace', MarketSector='Education', EvidencedSpend=0.0),
+                Row(SpendMonth=datetime.date(2022, 4, 1), Category='Network Service', MarketSector='Education', EvidencedSpend=0.0),
+            ]
+            # fmt: on
+        )
+        actual = create_mock_forecast(
+            input_df=input_df,
+            months_to_forecast=36,
+            columns_to_consider=["Category", "MarketSector"],
+        )
+
+        assert (
+            actual.count() == 36 * 3
+        )  # Workplace & Health got two rows, so it is 3 combinations * 36 months
 
     def test_handle_unrelated_columns(self):
         """Test that the function works correctly for input data with unrelated columns"""
@@ -159,8 +179,8 @@ class MockForecastTest(ReusableSparkTestCase):
         )
 
         expected_forecast_period = [
-            datetime.date(2022, 4, 1) + relativedelta(months=m)
-            for m in range(1, 12 + 1)
+            datetime.date.today().replace(day=1) + relativedelta(months=m + 1)
+            for m in range(12)
         ]
         expected_column_names = [
             "SpendMonth",

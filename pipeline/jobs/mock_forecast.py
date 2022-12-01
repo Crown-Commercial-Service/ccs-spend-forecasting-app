@@ -1,11 +1,13 @@
 from pyspark.sql import DataFrame, functions as F
 import datetime
+from typing import Union
 
 
 def create_mock_forecast(
     input_df: DataFrame,
     months_to_forecast: int,
     columns_to_consider: list[str],
+    start_month: Union[datetime.date, None] = None,
     date_column: str = "SpendMonth",
     amount_column: str = "EvidencedSpend",
 ) -> DataFrame:
@@ -16,8 +18,9 @@ def create_mock_forecast(
         input_df (DataFrame): The input dataframe
         months_to_forecast (int): The number of months to create forecast for.
         columns_to_consider (list[str]): Column names that represent the categorisation to consider when making forecast. For example, ["Category", "MarketSector"] . It will create a set of forecast for n month for each combination.
-        date_column (str, optional): The column name that represent date. Defaults to "SpendMonth". The datatype in this column is expected to be valid date type, not string representation of date.
-        amount_column (str, optional): The column name that represent spend amount.
+        start_month: The month to start making forecast. If omitted, will default to the next month of today's date.
+        date_column (str, optional): The column name that represent date. Defaults to "SpendMonth".
+        amount_column (str, optional): The column name that represent spend amount. Defaults to "EvidencedSpend". In the output data, this column name will be replaced by 'ForecastSpend'
 
     Returns:
         A dataframe of mock forecast data.
@@ -29,18 +32,16 @@ def create_mock_forecast(
         F.max_by(amount_column, date_column).alias(amount_column),
     )
 
-    date_column_values = [row[date_column] for row in latest_month_rows.collect()]
-
-    if not all(isinstance(value, datetime.date) for value in date_column_values):
-        raise ValueError(
-            "Invalid date found in input data. Please check whether date column have the correct type."
-        )
+    if not start_month:
+        start_month = input_df.select(F.add_months(F.current_date(), 1)).head(1)[0][0]
+    elif isinstance(start_month, datetime.date):
+        start_month = start_month.replace(day=1)
 
     output_df = (
         latest_month_rows.withColumns(  # generate the start and end for the forecast period
             {
-                "forecastStart": F.add_months(date_column, 1),
-                "forecastEnd": F.add_months(date_column, months_to_forecast),
+                "forecastStart": F.lit(start_month),
+                "forecastEnd": F.add_months(F.lit(start_month), months_to_forecast - 1),
             }
         )
         .withColumn(  # populate a row for every month within the forecast period
