@@ -144,3 +144,42 @@ class MockForecastTest(ReusableSparkTestCase):
                 date_column="SpendMonth",
                 amount_column="EvidencedSpend",
             )
+
+    def test_handle_unrelated_columns(self):
+        """Test that the function works correctly for input data with unrelated columns"""
+        input_df = self.spark.createDataFrame(
+            # fmt: off
+            data=[
+                Row(CustomerURN=12345, FinancialYear='FY2021/22', SpendMonth=datetime.date(2022, 1, 1), Category='Test Category', MarketSector='Health', EvidencedSpend=1234.0),
+                Row(CustomerURN=67890, FinancialYear='FY2021/22', SpendMonth=datetime.date(2022, 2, 1), Category='Test Category', MarketSector='Health', EvidencedSpend=2234.0),
+                Row(CustomerURN=13579, FinancialYear='FY2021/22', SpendMonth=datetime.date(2022, 3, 1), Category='Test Category', MarketSector='Health', EvidencedSpend=3456.12),
+                Row(CustomerURN=24680, FinancialYear='FY2022/21', SpendMonth=datetime.date(2022, 4, 1), Category='Test Category', MarketSector='Health', EvidencedSpend=876.5),
+            ]
+            # fmt: on
+        )
+
+        expected_forecast_period = [
+            datetime.date(2022, 4, 1) + relativedelta(months=m)
+            for m in range(1, 12 + 1)
+        ]
+        expected_column_names = [
+            "SpendMonth",
+            "Category",
+            "MarketSector",
+            "ForecastSpend",
+        ]
+
+        actual = create_mock_forecast(
+            input_df=input_df,
+            months_to_forecast=12,
+            columns_to_consider=["Category", "MarketSector"],
+            date_column="SpendMonth",
+            amount_column="EvidencedSpend",
+        )
+
+        assert actual.count() == 12
+        assert sorted(actual.columns) == sorted(expected_column_names)
+
+        dates_in_output_df = [row["SpendMonth"] for row in actual.collect()]
+        for date in expected_forecast_period:
+            assert date in dates_in_output_df

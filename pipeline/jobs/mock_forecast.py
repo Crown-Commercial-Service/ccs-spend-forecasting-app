@@ -47,11 +47,15 @@ def create_mock_forecast(
             "forecastPeriod",
             F.expr("sequence(forecastStart, forecastEnd, interval 1 month)"),
         )
-        .select(*input_df.columns, F.explode("forecastPeriod").alias("ForecastMonth"))
+        .select(
+            *columns_to_consider,
+            amount_column,
+            F.explode("forecastPeriod").alias("ForecastMonth")
+        )
         .withColumn(  # add random amount as ForecastSpend
             "ForecastSpend", F.round((F.rand() + 0.5) * F.col(amount_column), 1)
         )
-        .drop(amount_column, date_column)
+        .drop(amount_column)
         .withColumnRenamed("ForecastMonth", date_column)
     )
 
