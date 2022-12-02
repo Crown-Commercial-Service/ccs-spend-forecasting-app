@@ -10,6 +10,7 @@ def create_mock_forecast(
     start_month: Optional[datetime.date] = None,
     date_column: str = "SpendMonth",
     amount_column: str = "EvidencedSpend",
+    randomness: Optional[float] = 0.5,
 ) -> DataFrame:
     """Create mock forecast for given spend data. The forecast amount is generated randomly within a certain range.
     For each combination in the input data, it will detect the latest entry and create mock forecast base on that figure.
@@ -21,6 +22,7 @@ def create_mock_forecast(
         start_month: (datetime.date, optional) The month to start making forecast. If omitted, will default to the next month from today's date.
         date_column (str, optional): The column name that represent date. Defaults to "SpendMonth".
         amount_column (str, optional): The column name that represent spend amount. Defaults to "EvidencedSpend". In the output data, this column name will be replaced by 'ForecastSpend'
+        randomness (float, optional): A number between 0 to 1 which control the random range of output. For example, if randomness = 0.2, output amount will be within +-20% range of latest month spending.
 
     Returns:
         A dataframe of mock forecast data.
@@ -66,14 +68,17 @@ def create_mock_forecast(
         .select(
             *columns_to_consider,
             amount_column,
-            F.explode("forecastPeriod").alias("ForecastMonth")
+            F.explode("forecastPeriod").alias("ForecastMonth"),
         )
     )
 
-    # fill in random amounts to ForecastSpend within a range of +/-50%.
+    # fill in random amounts to ForecastSpend
     output_df = (
         df_populated_with_months.withColumn(
-            "ForecastSpend", F.round((F.rand() + 0.5) * F.col(amount_column), 1)
+            "ForecastSpend",
+            F.expr(
+                f"round({amount_column} * (1 + {randomness} * (2 * rand() - 1)), 1)"
+            ),
         )
         .drop(amount_column)
         .withColumnRenamed("ForecastMonth", date_column)

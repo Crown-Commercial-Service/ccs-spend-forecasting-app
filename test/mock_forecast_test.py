@@ -204,6 +204,37 @@ class MockForecastTest(ReusableSparkTestCase):
         for date in expected_forecast_period:
             assert date in dates_in_output_df
 
+    def test_mock_forecast_random_range(self):
+        """Test that the mock forecast output value within a given random range."""
+        input_df = self.spark.createDataFrame(
+            # fmt: off
+            data=[
+                Row(SpendMonth=datetime.date(2022, 4, 1), Category='Category A', MarketSector='Health', EvidencedSpend=1000.0),
+                Row(SpendMonth=datetime.date(2022, 4, 1), Category='Category A', MarketSector='Health', EvidencedSpend=3000.0),
+            ]
+            # fmt: on
+        )
+
+        test_inputs = [0.15, 0.2, 0.3, 0.5, 0.6]
+
+        for input_randomness in test_inputs:
+
+            expected_lower_limit = (1000 + 3000) * (1 - input_randomness)
+            expected_upper_limit = (1000 + 3000) * (1 + input_randomness)
+
+            actual = create_mock_forecast(
+                input_df=input_df,
+                months_to_forecast=36,
+                columns_to_consider=["Category", "MarketSector"],
+                date_column="SpendMonth",
+                amount_column="EvidencedSpend",
+                randomness=input_randomness,
+            )
+
+            for row in actual.collect():
+                assert row["ForecastSpend"] <= expected_upper_limit
+                assert row["ForecastSpend"] >= expected_lower_limit
+
 
 class AggregateSpendsByMonth(ReusableSparkTestCase):
     def test_aggregate_spends(self):
