@@ -3,7 +3,7 @@ from pyspark.sql import Row, functions as F
 import datetime
 from dateutil.relativedelta import relativedelta
 
-from pipeline.jobs.mock_forecast import create_mock_forecast
+from pipeline.jobs.mock_forecast import create_mock_forecast, aggregate_spends_by_month
 
 
 class MockForecastTest(ReusableSparkTestCase):
@@ -203,3 +203,46 @@ class MockForecastTest(ReusableSparkTestCase):
         dates_in_output_df = [row["SpendMonth"] for row in actual.collect()]
         for date in expected_forecast_period:
             assert date in dates_in_output_df
+
+
+class AggregateSpendsByMonth(ReusableSparkTestCase):
+    def test_aggregate_spends(self):
+        """Test creating mock forecast for just one combination."""
+        input_df = self.spark.createDataFrame(
+            # fmt: off
+            data=[
+                Row(CustomerURN="abcdef", InvoiceNumber='dw9jj-adkak', SpendMonth=datetime.date(2022, 1, 1), Category='Network Service', MarketSector='Health', EvidencedSpend=100.0),
+                Row(CustomerURN="d09ais", InvoiceNumber='o9jas-10k93', SpendMonth=datetime.date(2022, 1, 1), Category='Network Service', MarketSector='Health', EvidencedSpend=200.0),
+                Row(CustomerURN="r2jjem", InvoiceNumber='dw9jj-i0da0', SpendMonth=datetime.date(2022, 2, 1), Category='Network Service', MarketSector='Health', EvidencedSpend=300.0),
+                Row(CustomerURN="29ejin", InvoiceNumber='929ej-0di0d', SpendMonth=datetime.date(2022, 2, 1), Category='Network Service', MarketSector='Health', EvidencedSpend=400.0),
+                Row(CustomerURN="ejqidj", InvoiceNumber='0ix0s-0akk0', SpendMonth=datetime.date(2022, 2, 1), Category='Office Supplies', MarketSector='Health', EvidencedSpend=500.0),
+                Row(CustomerURN="0xajos", InvoiceNumber='xak09-xa0j0', SpendMonth=datetime.date(2022, 2, 1), Category='Office Supplies', MarketSector='Health', EvidencedSpend=600.0),
+                Row(CustomerURN="1au9ji", InvoiceNumber='ax0ix-0ka0x', SpendMonth=datetime.date(2022, 3, 1), Category='Office Supplies', MarketSector='Health', EvidencedSpend=700.0),
+                Row(CustomerURN="i0xajk", InvoiceNumber='0xka0-ax0i0', SpendMonth=datetime.date(2022, 1, 1), Category='Office Supplies', MarketSector='Education', EvidencedSpend=800.0),
+                Row(CustomerURN="cmlam0", InvoiceNumber='-axk--0aas0', SpendMonth=datetime.date(2022, 1, 1), Category='Office Supplies', MarketSector='Education', EvidencedSpend=900.0),
+            ]
+            # fmt: on
+        )
+
+        expected = self.spark.createDataFrame(
+            # fmt: off
+            data=[
+                Row(SpendMonth=datetime.date(2022, 1, 1), Category='Network Service', MarketSector='Health', EvidencedSpend=300.0),
+                Row(SpendMonth=datetime.date(2022, 2, 1), Category='Network Service', MarketSector='Health', EvidencedSpend=700.0),
+                Row(SpendMonth=datetime.date(2022, 2, 1), Category='Office Supplies', MarketSector='Health', EvidencedSpend=1100.0),
+                Row(SpendMonth=datetime.date(2022, 3, 1), Category='Office Supplies', MarketSector='Health', EvidencedSpend=700.0),
+                Row(SpendMonth=datetime.date(2022, 1, 1), Category='Office Supplies', MarketSector='Education', EvidencedSpend=1700.0),
+            ]
+            # fmt: on
+        )
+
+        actual = aggregate_spends_by_month(
+            input_df=input_df,
+            columns_to_consider=["Category", "MarketSector"],
+            date_column="SpendMonth",
+            amount_column="EvidencedSpend",
+        )
+
+        diff = actual.exceptAll(expected)
+
+        assert diff.count() == 0
