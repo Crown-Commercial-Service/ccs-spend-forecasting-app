@@ -31,14 +31,18 @@ DB_PROPERTIES_SPARK = {
 def get_logger() -> logging.Logger:
     """Returns logger to be used in this app
 
-    :return: logger
+    Returns:
+        logger
+
     """
+
     return logger
 
 
 def get_database_connection() -> Connection:
     """Call this method to get database connection.
-
-    :return: sqlalchemy connection object to query database.
+    Returns:
+        sqlalchemy connection object to query database.
     """
+
     return DB_ENGINE.connect()
