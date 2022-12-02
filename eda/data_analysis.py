@@ -1112,7 +1112,6 @@ def main():
     prepared_df = prepare_data(raw_df)
 
     category, sector = get_category_sector(index=0)
-    logger.debug(f"{category} and {sector}")
     visualize_raw_data(df=prepared_df, category=category, sector=sector, run=False)
     is_spend_random_walk(prepared_df, category=category, sector=sector, run=False)
     model_arma(prepared_df, category=category, sector=sector, run=False)
