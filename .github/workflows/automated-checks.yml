@@ -1,0 +1,27 @@
+name: Automated checks
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  checks:
+    name: "Check formatting, linting, and unit tests"
+    runs-on: ubuntu-20.04
+    steps:
+      # Needs a more recent version of Python than default (3.8)
+      - name: Install Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10' 
+      - uses: actions/checkout@v3
+      - name: Set up poetry
+        uses: abatilo/actions-poetry@v2
+      - name: Install Poetry packages
+        run: poetry install
+      - name: Run formatter
+        run: make format_check
+      - name: Run linter
+        run: make lint
+      - name: Run unit testing
+        run: make unit_testing
