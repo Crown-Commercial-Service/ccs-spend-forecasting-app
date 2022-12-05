@@ -1,4 +1,5 @@
-from pyspark.sql import DataFrame, functions as F
+from pyspark.sql import DataFrame, functions as F, SparkSession
+import pandas as pd
 import datetime
 from typing import Optional
 
@@ -85,6 +86,40 @@ def create_mock_forecast(
     )
 
     return output_df
+
+
+def create_mock_forecast_pandas(input_df: pd.DataFrame, **kwargs) -> pd.DataFrame:
+    """ A simple wrapper around method #create_mock_forecast to make it works with pandas dataframe"""
+    spark = SparkSession.getActiveSession()
+
+    if not spark:
+        spark = SparkSession.Builder().getOrCreate()
+    input_df_in_pandas = spark.createDataFrame(data=input_df)
+    output_df = create_mock_forecast(input_df=input_df_in_pandas, **kwargs)
+
+    return output_df.toPandas()
+
+
+def create_mock_model(randomness: float):
+    """ Create a mock model that output forecast with a pre-defined randomness factor.
+
+    Args:
+        randomness (float): A number between 0 to 1 which control the random range of output. For example, if randomness = 0.2, output amount will be within +-20% range of latest month spending.
+    """
+    
+    def model(input_df: pd.DataFrame, months_to_forecast: int, start_month: Optional[datetime.date] = None):
+        return create_mock_forecast_pandas(
+            input_df=input_df,
+            months_to_forecast=months_to_forecast,
+            columns_to_consider=['Category', 'MarketSector'],
+            start_month=start_month,
+            date_column="SpendMonth",
+            amount_column="EvidencedSpend",
+            randomness=randomness,
+        )
+
+    return model
+
 
 
 def aggregate_spends_by_month(
