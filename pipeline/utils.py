@@ -65,7 +65,7 @@ def get_dbutils():
             "not running in databricks. dbutils is not available in local enviroment"
         )
 
-    from pyspark.dbutils import DBUtils
+    from pyspark.dbutils import DBUtils # pylint: disable=no-name-in-module
 
     spark = get_spark_session()
     dbutils = DBUtils(spark)
