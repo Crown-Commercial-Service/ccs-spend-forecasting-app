@@ -19,13 +19,12 @@ DB_PASSWORD = config.get("database", "password")
 DB_DRIVER = config.get("database", "driver")
 DB_POOL_SIZE = int(config.get("database", "pool_size"))
 PY_DB_URL = f"{DB_DIALECT}://{DB_USER}:{DB_PASSWORD}@{DB_SERVER}:{DB_PORT}/{DB_NAME}?driver={DB_DRIVER}"
-JDBC_URL = f"jdbc:sqlserver://{DB_SERVER}:{DB_PORT};database={DB_NAME};" + \
-           "encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;loginTimeout=30;"
+JDBC_URL = (
+    f"jdbc:sqlserver://{DB_SERVER}:{DB_PORT};database={DB_NAME};"
+    + "encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;loginTimeout=30;"
+)
 DB_ENGINE = create_engine(PY_DB_URL, pool_size=DB_POOL_SIZE)
-DB_PROPERTIES_SPARK = {
-    "user": DB_USER,
-    "password": DB_PASSWORD
-}
+DB_PROPERTIES_SPARK = {"user": DB_USER, "password": DB_PASSWORD}
 
 
 def get_logger() -> logging.Logger:

@@ -1,0 +1,5 @@
+[MASTER]
+disable=I,R,C,W
+recursive=yes
+max-line-length=88
+ignored-modules=pyspark.dbutils
