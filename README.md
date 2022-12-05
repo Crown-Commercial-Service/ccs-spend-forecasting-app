@@ -4,6 +4,21 @@ Application repository for Data Insights Spend Forecasting Project
 ## About
 The goal of this project is to forecast the spend. <more to come.>
 
+### Requirements
+
+- Poetry
+- Python
+- Java
+
+#### Java installation
+
+In order to install Java on a Mac, the easiest way is to use Homebrew. Run `brew install openjdk`, and create a symlink to allow your machine to locate the JDK:
+
+```
+sudo ln -sfn /opt/homebrew/opt/openjdk/libexec/openjdk.jdk /Library/Java/JavaVirtualMachines/openjdk.jdk
+```
+
+
 ### Dependency management
 Dependency is managed by [Poetry](https://python-poetry.org) 
 
