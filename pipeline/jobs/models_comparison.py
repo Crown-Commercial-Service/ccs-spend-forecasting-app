@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 from typing import Callable
-from sklearn.metrics import mean_absolute_percentage_error
+from sklearn.metrics import mean_absolute_percentage_error, r2_score
 
 
 def safe_mean_absolute_percentage_error(y_true: pd.Series, y_pred: pd.Series, **kwargs):
@@ -20,6 +20,22 @@ def safe_mean_absolute_percentage_error(y_true: pd.Series, y_pred: pd.Series, **
 
     return mean_absolute_percentage_error(y_true=y_true, y_pred=y_pred, **kwargs)
 
+
+def safe_r2_score(y_true: pd.Series, y_pred: pd.Series, **kwargs):
+    """A wrapper around the r2_score method to avoid error arise from NaN value in input.
+    If any of the input has NaN, will simply return NaN instead of throwing error.
+
+    Args:
+        y_true (pd.Series): _description_
+        y_pred (pd.Series): _description_
+
+    Returns:
+        pd.Series or scalar value np.NaN
+    """
+    if y_true.hasnans or y_pred.hasnans:
+        return np.NaN
+
+    return r2_score(y_true=y_true, y_pred=y_pred, **kwargs)
 
 def create_models_comparison(
     input_df: pd.DataFrame,
@@ -87,21 +103,17 @@ def create_models_comparison(
         ).abs() / comparison_table["EvidencedSpend"]
 
         # Calculate the Mean Absolute Error Percentage for each ('Category', 'MarketSector') combination
-        mean_absolute_errors_by_combinations = (
+        r2_score_by_combinations = (
             comparison_table.groupby(["Category", "MarketSector"])[
                 ["EvidencedSpend", forecast_column_name]
             ]
-            .apply(
-                lambda df: safe_mean_absolute_percentage_error(
-                    y_true=df["EvidencedSpend"], y_pred=df[forecast_column_name]
-                )
-            )
-            .to_frame(f"{model_name} MAE %")
+            .apply(lambda df: safe_r2_score(y_true=df["EvidencedSpend"], y_pred=df[forecast_column_name]))
+            .to_frame(f"{model_name} R2 Score")
             .reset_index(drop=False)
         )
 
         comparison_table = comparison_table.merge(
-            right=mean_absolute_errors_by_combinations,
+            right=r2_score_by_combinations,
             on=["Category", "MarketSector"],
             how="left",
         )
@@ -110,4 +122,5 @@ def create_models_comparison(
         by=["Category", "MarketSector", "SpendMonth"], inplace=True
     )
 
+    print(comparison_table)
     return comparison_table
