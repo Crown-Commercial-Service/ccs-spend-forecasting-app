@@ -24,8 +24,6 @@ class ModelComparisonTest(ReusableSparkTestCase):
             }
         )
 
-        train_size = 4
-        prediction_size = 2
         models = {
             "Model A": create_mock_model(randomness=0.8),
             "Model B": create_mock_model(randomness=0.05),
@@ -50,8 +48,7 @@ class ModelComparisonTest(ReusableSparkTestCase):
 
         actual = create_models_comparison(
             input_df=input_df,
-            train_size=train_size,
-            prediction_size=prediction_size,
+            train_ratio=0.67,
             models=models,
         )
 
@@ -109,8 +106,7 @@ class ModelComparisonTest(ReusableSparkTestCase):
 
         actual = create_models_comparison(
             input_df=input_df,
-            train_size=train_size,
-            prediction_size=prediction_size,
+            train_ratio=0.9,
             models=models,
         )
 
