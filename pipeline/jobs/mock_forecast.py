@@ -146,3 +146,42 @@ def aggregate_spends_by_month(
     return input_df.groupBy(date_column, *columns_to_consider).agg(
         F.sum(amount_column).alias(amount_column)
     )
+
+
+class ForecastModel():
+    def __init__(self, 
+        name: str, 
+        columns_to_consider: list[str] = ['Category', 'MarketSector'], 
+        date_column: str = "SpendMonth",
+        amount_column: str = "EvidencedSpend"
+    ):
+        self.name = name
+        self.columns_to_consider = columns_to_consider
+        self.date_column = date_column
+        self.amount_column = amount_column
+
+    def create_forecast(self, input_df: pd.DataFrame, months_to_forecast: int, start_month: Optional[datetime.date] = None) -> pd.DataFrame:
+        raise NotImplementedError
+
+
+
+class MockForecastModel(ForecastModel):
+    def __init__(self, 
+        name: str = 'Mock Model A',
+        columns_to_consider: list[str] = ['Category', 'MarketSector'], 
+        date_column: str = "SpendMonth",
+        amount_column: str = "EvidencedSpend",
+        randomness: float = 0.5
+    ):
+        super().__init__(name=name, columns_to_consider=columns_to_consider, date_column=date_column, amount_column=amount_column)
+        self.randomness = randomness
+
+    def create_forecast(self, input_df: pd.DataFrame, months_to_forecast: int, start_month: Optional[datetime.date] = None) -> pd.DataFrame:
+        df_aggregated_spend_by_month = (
+            input_df.groupby([*self.columns_to_consider, self.date_column])[self.amount_column]
+            .sum()
+            .reset_index()
+            .sort_values(by=self.date_column)
+        )
+
+        latest_month_rows = df_aggregated_spend_by_month.groupBy(self.columns_to_consider)

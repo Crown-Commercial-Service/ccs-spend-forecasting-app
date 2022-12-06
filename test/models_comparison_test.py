@@ -4,8 +4,6 @@ import pandas as pd
 from base_test import ReusableSparkTestCase
 
 from pipeline.jobs.mock_forecast import (
-    create_mock_forecast,
-    create_mock_forecast_pandas,
     create_mock_model,
 )
 from pipeline.jobs.models_comparison import create_models_comparison
@@ -84,8 +82,6 @@ class ModelComparisonTest(ReusableSparkTestCase):
             }
         )
 
-        train_size = 8
-        prediction_size = 4
         models = {
             "Model A": create_mock_model(randomness=0.8),
             "Model B": create_mock_model(randomness=0.05),
