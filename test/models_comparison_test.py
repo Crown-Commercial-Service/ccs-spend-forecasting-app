@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from random import random
 
-from base_test import ReusableSparkTestCase
+from unittest import TestCase
 
 from pipeline.jobs.mock_forecast import (
     create_mock_model,
@@ -11,7 +11,7 @@ from pipeline.jobs.mock_forecast import (
 from pipeline.jobs.models_comparison import create_models_comparison
 
 
-class ModelComparisonTest(ReusableSparkTestCase):
+class ModelComparisonTest(TestCase):
     def test_for_one_combination(self):
         """Basic test for comparing models with only one Category/MarketSector combination in input data"""
         input_df = pd.DataFrame(
@@ -24,10 +24,10 @@ class ModelComparisonTest(ReusableSparkTestCase):
             }
         )
 
-        models = {
-            "Model A": create_mock_model(randomness=0.8),
-            "Model B": create_mock_model(randomness=0.05),
-        }
+        models = [
+            create_mock_model(name="Model A", randomness=0.8),
+            create_mock_model(name="Model B", randomness=0.05),
+        ]
 
         expected_output_format = pd.DataFrame(
             # fmt: off
@@ -36,6 +36,7 @@ class ModelComparisonTest(ReusableSparkTestCase):
                 'MarketSector': ['Health', 'Health'],
                 'EvidencedSpend': [1000.0, 1000.0],
                 'SpendMonth': [datetime.date(2022, 5, 1), datetime.date(2022, 6, 1)],
+                
                 ## the below figures are just for example. Not to be campared with actual output as randomness are involved.
                 'Model A Forecast': [1300.0, 700.0],
                 'Model A Error %': [0.3, 0.3],
@@ -67,9 +68,7 @@ class ModelComparisonTest(ReusableSparkTestCase):
 
         # since we only have one combination, all MAPE for the same model should be the same
         assert len(set(actual["Model A MAPE"])) == 1
-        assert len(set(actual["Model B MAPE"])) == 1     
-
-
+        assert len(set(actual["Model B MAPE"])) == 1
 
     def test_for_multiple_combinations(self):
         """Basic test for comparing models with multiple Category/MarketSector combination in input data"""
@@ -84,10 +83,10 @@ class ModelComparisonTest(ReusableSparkTestCase):
             }
         )
 
-        models = {
-            "Model A": create_mock_model(randomness=0.8),
-            "Model B": create_mock_model(randomness=0.05),
-        }
+        models = [
+            create_mock_model(name="Model A", randomness=0.8),
+            create_mock_model(name="Model B", randomness=0.05),
+        ]
 
         expected_columns = [
             "Category",
@@ -112,12 +111,14 @@ class ModelComparisonTest(ReusableSparkTestCase):
 
         # for each combination of Category/MarketSector, assert the MAPE is the same
         # this is to check that we are calculating a separate score for each combination
-        for category in input_df['Category'].unique():
-            for market_sector in input_df['MarketSector'].unique():
-                output_for_current_combination = actual[(actual["Category"] == category) & (actual["MarketSector"] == market_sector)]
+        for category in input_df["Category"].unique():
+            for market_sector in input_df["MarketSector"].unique():
+                output_for_current_combination = actual[
+                    (actual["Category"] == category)
+                    & (actual["MarketSector"] == market_sector)
+                ]
                 assert len(set(output_for_current_combination["Model A MAPE"])) == 1
-                assert len(set(output_for_current_combination["Model B MAPE"])) == 1     
-
+                assert len(set(output_for_current_combination["Model B MAPE"])) == 1
 
     def test_for_handling_na_data(self):
         """Test for handling input data with months of no spending, N/A or zero values"""
@@ -133,11 +134,10 @@ class ModelComparisonTest(ReusableSparkTestCase):
             }
         )
 
-
-        models = {
-            "Model A": create_mock_model(randomness=0.8),
-            "Model B": create_mock_model(randomness=0.05),
-        }
+        models = [
+            create_mock_model(name="Model A", randomness=0.8),
+            create_mock_model(name="Model B", randomness=0.05),
+        ]
 
         actual = create_models_comparison(
             input_df=input_df,
@@ -147,6 +147,9 @@ class ModelComparisonTest(ReusableSparkTestCase):
 
         # 11 * 0.8 = 8.8, so it is 8 months for training and 3 months for testing
         # actual data for Dec got zero, so only Sept and Oct is used for comparison
-        assert list(actual["SpendMonth"]) == [datetime.date(2021, 9, 1), datetime.date(2021, 10, 1)] 
+        assert list(actual["SpendMonth"]) == [
+            datetime.date(2021, 9, 1),
+            datetime.date(2021, 10, 1),
+        ]
 
         assert all(actual["Model A MAPE"].notna())
