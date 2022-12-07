@@ -1,5 +1,6 @@
 import datetime
 import pandas as pd
+import numpy as np
 from random import random
 
 from base_test import ReusableSparkTestCase
@@ -38,10 +39,10 @@ class ModelComparisonTest(ReusableSparkTestCase):
                 ## the below figures are just for example. Not to be campared with actual output as randomness are involved.
                 'Model A Forecast': [1300.0, 700.0],
                 'Model A Error %': [0.3, 0.3],
-                'Model A R2 Score': [0.3, 0.3],
+                'Model A MAPE': [0.3, 0.3],
                 'Model B Forecast': [950.0, 1050],
                 'Model B Error %': [0.05, 0.05],
-                'Model B R2 Score': [0.05, 0.05],
+                'Model B MAPE': [0.05, 0.05],
             }
         )
 
@@ -64,12 +65,10 @@ class ModelComparisonTest(ReusableSparkTestCase):
             sorted(expected_output_format["MarketSector"]),
         )
 
-        # since we only have one combination, all R2 score for the same model should be the same
-        assert len(set(actual["Model A R2 Score"])) == 1
-        assert len(set(actual["Model B R2 Score"])) == 1     
+        # since we only have one combination, all MAPE for the same model should be the same
+        assert len(set(actual["Model A MAPE"])) == 1
+        assert len(set(actual["Model B MAPE"])) == 1     
 
-        # since model B is meant to be the more accurate model, assert model B's R2 score is better than model A.
-        assert all(actual["Model A R2 Score"] < actual["Model B R2 Score"])
 
 
     def test_for_multiple_combinations(self):
@@ -97,10 +96,10 @@ class ModelComparisonTest(ReusableSparkTestCase):
             "SpendMonth",
             "Model A Forecast",
             "Model A Error %",
-            "Model A R2 Score",
+            "Model A MAPE",
             "Model B Forecast",
             "Model B Error %",
-            "Model B R2 Score",
+            "Model B MAPE",
         ]
 
         actual = create_models_comparison(
@@ -111,13 +110,43 @@ class ModelComparisonTest(ReusableSparkTestCase):
 
         self.assertListEqual(sorted(expected_columns), sorted(actual.columns))
 
-        # for each combination of Category/MarketSector, assert the R2 score is the same
-        # this is to check that we are calculating a separate score for a particular combination
+        # for each combination of Category/MarketSector, assert the MAPE is the same
+        # this is to check that we are calculating a separate score for each combination
         for category in input_df['Category'].unique():
             for market_sector in input_df['MarketSector'].unique():
                 output_for_current_combination = actual[(actual["Category"] == category) & (actual["MarketSector"] == market_sector)]
-                assert len(set(output_for_current_combination["Model A R2 Score"])) == 1
-                assert len(set(output_for_current_combination["Model B R2 Score"])) == 1     
+                assert len(set(output_for_current_combination["Model A MAPE"])) == 1
+                assert len(set(output_for_current_combination["Model B MAPE"])) == 1     
 
-        # since model B is meant to be the more accurate model, assert model B's R2 score is better than model A.
-        assert all(actual["Model A R2 Score"] < actual["Model B R2 Score"])
+
+    def test_for_handling_na_data(self):
+        """Test for handling input data with months of no spending, N/A or zero values"""
+        input_df = pd.DataFrame(
+            # fmt: off
+            data={
+                # No spending in November
+                'SpendMonth': [datetime.date(2021, month, 1) for month in range(1, 10 + 1)] + [datetime.date(2021, 12, 1)],
+                'Category': ['Test Category'] * 11,
+                'MarketSector': ['Health'] * 11,
+                # Some months got 0 spending or NaN spending
+                'EvidencedSpend': [1000 + 100 * random() for _ in range(4)] + [np.NaN] + [0] + [1000 + 100 * random() for _ in range(4)] + [0]
+            }
+        )
+
+
+        models = {
+            "Model A": create_mock_model(randomness=0.8),
+            "Model B": create_mock_model(randomness=0.05),
+        }
+
+        actual = create_models_comparison(
+            input_df=input_df,
+            train_ratio=0.80,
+            models=models,
+        )
+
+        # 11 * 0.8 = 8.8, so it is 8 months for training and 3 months for testing
+        # actual data for Dec got zero, so only Sept and Oct is used for comparison
+        assert list(actual["SpendMonth"]) == [datetime.date(2021, 9, 1), datetime.date(2021, 10, 1)] 
+
+        assert all(actual["Model A MAPE"].notna())

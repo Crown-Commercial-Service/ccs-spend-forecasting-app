@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 from typing import Callable
-from sklearn.metrics import mean_absolute_percentage_error, r2_score
+from sklearn.metrics import mean_absolute_percentage_error, mean_absolute_error, r2_score
 
 
 def safe_mean_absolute_percentage_error(y_true: pd.Series, y_pred: pd.Series, **kwargs):
@@ -68,6 +68,7 @@ def create_models_comparison(
     prediction_size = dataset_size - train_size
 
     train_period = unique_dates[0:train_size]
+
     prediction_period = unique_dates[train_size:]
 
     # Take a portion of real data to feed in the model. The rest will be compared with the output of the model.
@@ -91,29 +92,35 @@ def create_models_comparison(
         ).rename(columns={"ForecastSpend": forecast_column_name})
 
         comparison_table = comparison_table.merge(
-            right=forecast, on=["Category", "MarketSector", "SpendMonth"], how="outer"
+            right=forecast, on=["Category", "MarketSector", "SpendMonth"], how="inner"
         )
 
-        # If actual spending for certain month is NaN, replace with 0.
-        comparison_table["EvidencedSpend"].fillna(0, inplace=True)
 
-        # Calculate in absolute error percentage for each single months
+        # Calculate absolute error percentage for each single months
         comparison_table[f"{model_name} Error %"] = (
             comparison_table[forecast_column_name] - comparison_table["EvidencedSpend"]
         ).abs() / comparison_table["EvidencedSpend"]
 
-        # Calculate the Mean Absolute Error Percentage for each ('Category', 'MarketSector') combination
-        r2_score_by_combinations = (
-            comparison_table.groupby(["Category", "MarketSector"])[
-                ["EvidencedSpend", forecast_column_name]
-            ]
-            .apply(lambda df: safe_r2_score(y_true=df["EvidencedSpend"], y_pred=df[forecast_column_name]))
-            .to_frame(f"{model_name} R2 Score")
-            .reset_index(drop=False)
+        # Calculate MAPE Mean Absolute Percentage Error
+        mape_by_combinations = (comparison_table.groupby(["Category", "MarketSector"])[
+                 ["EvidencedSpend", forecast_column_name]
+             ]
+             .apply(lambda df: safe_mean_absolute_percentage_error(y_true=df["EvidencedSpend"], y_pred=df[forecast_column_name]))
+             .to_frame(f"{model_name} MAPE")
         )
 
+        # comment out the code related to R2 score. Wait until further decision on what metric to measure.
+        # r2_score_by_combinations = (
+        #     comparison_table.groupby(["Category", "MarketSector"])[
+        #         ["EvidencedSpend", forecast_column_name]
+        #     ]
+        #     .apply(lambda df: safe_r2_score(y_true=df["EvidencedSpend"], y_pred=df[forecast_column_name]))
+        #     .to_frame(f"{model_name} R2 Score")
+        #     .reset_index(drop=False)
+        # )
+
         comparison_table = comparison_table.merge(
-            right=r2_score_by_combinations,
+            right=mape_by_combinations,
             on=["Category", "MarketSector"],
             how="left",
         )
@@ -122,5 +129,4 @@ def create_models_comparison(
         by=["Category", "MarketSector", "SpendMonth"], inplace=True
     )
 
-    print(comparison_table)
     return comparison_table
