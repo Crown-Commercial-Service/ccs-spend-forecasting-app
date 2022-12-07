@@ -2,12 +2,9 @@ import datetime
 import pandas as pd
 import numpy as np
 from random import random
-
 from unittest import TestCase
 
-from pipeline.jobs.mock_forecast import (
-    create_mock_model,
-)
+from pipeline.jobs.mock_forecast import create_mock_model
 from pipeline.jobs.models_comparison import create_models_comparison
 
 

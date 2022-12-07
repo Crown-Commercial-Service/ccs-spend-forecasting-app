@@ -6,7 +6,6 @@ from sklearn.metrics import (
 )
 
 from pipeline.jobs.forecast_model import ForecastModel
-from pipeline.jobs.mock_forecast import create_mock_model
 
 
 def safe_mean_absolute_percentage_error(y_true: pd.Series, y_pred: pd.Series, **kwargs):
