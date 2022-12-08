@@ -13,8 +13,8 @@ def safe_mean_absolute_percentage_error(y_true: pd.Series, y_pred: pd.Series, **
     If any of the input has NaN, will simply return NaN instead of throwing error.
 
     Args:
-        y_true (pd.Series): _description_
-        y_pred (pd.Series): _description_
+        y_true (pd.Series):  Ground truth (correct) target values.
+        y_pred (pd.Series):  Predicted target values.
 
     Returns:
         pd.Series or scalar value np.NaN
@@ -30,8 +30,8 @@ def safe_r2_score(y_true: pd.Series, y_pred: pd.Series, **kwargs):
     If any of the input has NaN, will simply return NaN instead of throwing error.
 
     Args:
-        y_true (pd.Series): _description_
-        y_pred (pd.Series): _description_
+        y_true (pd.Series):  Ground truth (correct) target values.
+        y_pred (pd.Series):  Predicted target values.
 
     Returns:
         pd.Series or scalar value np.NaN
@@ -59,14 +59,18 @@ def create_models_comparison(
         pd.DataFrame: A table with the outputs and error rate for each given models.
     """
 
+    columns_to_consider = models[0].columns_to_consider
+    amount_column = models[0].amount_column
+    date_column = models[0].date_column
+
     aggregated_spend_by_month = (
-        input_df.groupby(["Category", "MarketSector", "SpendMonth"])["EvidencedSpend"]
+        input_df.groupby([*columns_to_consider, date_column])[amount_column]
         .sum()
         .reset_index()
-        .sort_values(by="SpendMonth")
+        .sort_values(by=date_column)
     )
 
-    unique_dates = aggregated_spend_by_month["SpendMonth"].unique()
+    unique_dates = aggregated_spend_by_month[date_column].unique()
     dataset_size = len(unique_dates)
 
     train_size = int(dataset_size * train_ratio)
@@ -78,10 +82,10 @@ def create_models_comparison(
 
     # Take a portion of real data to feed in the model. The rest will be compared with the output of the model.
     df_for_training = aggregated_spend_by_month[
-        aggregated_spend_by_month["SpendMonth"].isin(train_period)
+        aggregated_spend_by_month[date_column].isin(train_period)
     ]
     comparison_table = aggregated_spend_by_month[
-        aggregated_spend_by_month["SpendMonth"].isin(prediction_period)
+        aggregated_spend_by_month[date_column].isin(prediction_period)
     ].reset_index(drop=True)
 
     forecast_start_month = prediction_period[0]
@@ -98,45 +102,33 @@ def create_models_comparison(
         ).rename(columns={"ForecastSpend": forecast_column_name})
 
         comparison_table = comparison_table.merge(
-            right=forecast, on=["Category", "MarketSector", "SpendMonth"], how="inner"
+            right=forecast, on=[*columns_to_consider, date_column], how="inner"
         )
 
         # Calculate absolute error percentage for each single months
         comparison_table[f"{model_name} Error %"] = (
-            comparison_table[forecast_column_name] - comparison_table["EvidencedSpend"]
-        ).abs() / comparison_table["EvidencedSpend"]
+            comparison_table[forecast_column_name] - comparison_table[amount_column]
+        ).abs() / comparison_table[amount_column]
 
         # Calculate MAPE Mean Absolute Percentage Error
         mape_by_combinations = (
-            comparison_table.groupby(["Category", "MarketSector"])[
-                ["EvidencedSpend", forecast_column_name]
+            comparison_table.groupby(columns_to_consider)[
+                [amount_column, forecast_column_name]
             ]
             .apply(
                 lambda df: safe_mean_absolute_percentage_error(
-                    y_true=df["EvidencedSpend"], y_pred=df[forecast_column_name]
+                    y_true=df[amount_column], y_pred=df[forecast_column_name]
                 )
             )
             .to_frame(f"{model_name} MAPE")
         )
 
-        # comment out the code related to R2 score. Wait until further decision on what metric to measure.
-        # r2_score_by_combinations = (
-        #     comparison_table.groupby(["Category", "MarketSector"])[
-        #         ["EvidencedSpend", forecast_column_name]
-        #     ]
-        #     .apply(lambda df: safe_r2_score(y_true=df["EvidencedSpend"], y_pred=df[forecast_column_name]))
-        #     .to_frame(f"{model_name} R2 Score")
-        #     .reset_index(drop=False)
-        # )
-
         comparison_table = comparison_table.merge(
             right=mape_by_combinations,
-            on=["Category", "MarketSector"],
+            on=columns_to_consider,
             how="left",
         )
 
-    comparison_table.sort_values(
-        by=["Category", "MarketSector", "SpendMonth"], inplace=True
-    )
+    comparison_table.sort_values(by=[*columns_to_consider, date_column], inplace=True)
 
     return comparison_table
