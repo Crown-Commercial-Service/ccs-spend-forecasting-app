@@ -1,9 +1,10 @@
 import pandas as pd
 import datetime
 from typing import Optional
+from abc import ABC
 
 
-class ForecastModel:
+class ForecastModel(ABC):
     """
     An abstract class of a spend prediction model.
     The relevant column names of input data are to be registered at initialisation, to avoid hardcoding field names in machine learning codes.

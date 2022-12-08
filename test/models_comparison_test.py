@@ -194,3 +194,41 @@ class ModelComparisonTest(TestCase):
                 else:
                     assert all(rows_for_current_combination["Model Suggested"] == "Model B")
         # fmt: on
+
+    def test_for_more_than_two_models(self):
+        """Test that the function can compare more than two models"""
+
+        input_df = pd.DataFrame(
+            # fmt: off
+            data={
+                'SpendMonth': [datetime.date(2021, month, 1) for month in range(1, 12 + 1)] * 4,
+                'Category': ['Construction'] * 24 + ['Digital Future'] * 24,
+                'MarketSector': ['Health'] * 12 + ['Education']  * 12 + ['Health'] * 12 + ['Education']  * 12,
+                'EvidencedSpend': [1000 + 100 * random() for _ in range(12)] + [2000 + 100 * random() for _ in range(12)] + [3000 + 100 * random() for _ in range(12)] + [4000 + 100 * random() for _ in range(12)]
+            }
+            # fmt: on
+        )
+
+        models = [
+            create_mock_model(name="Model A", randomness=0.2),
+            create_mock_model(name="Model B", randomness=0.2),
+            create_mock_model(name="Model C", randomness=0.2),
+        ]
+
+        expected_column_names = [
+            "Model A Forecast",
+            "Model B Forecast",
+            "Model C Forecast",
+            "Model A MAPE",
+            "Model B MAPE",
+            "Model C MAPE",
+        ]
+
+        actual = create_models_comparison(
+            input_df=input_df,
+            train_ratio=0.8,
+            models=models,
+        )
+
+        for column_name in expected_column_names:
+            self.assertIn(column_name, list(actual.columns))
