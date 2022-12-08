@@ -41,6 +41,7 @@ class ModelComparisonTest(TestCase):
                 'Model B Forecast': [950.0, 1050],
                 'Model B Error %': [0.05, 0.05],
                 'Model B MAPE': [0.05, 0.05],
+                'Model Suggested': ['Model B', 'Model B']
             }
         )
 
@@ -96,6 +97,7 @@ class ModelComparisonTest(TestCase):
             "Model B Forecast",
             "Model B Error %",
             "Model B MAPE",
+            "Model Suggested",
         ]
 
         actual = create_models_comparison(
@@ -150,3 +152,45 @@ class ModelComparisonTest(TestCase):
         ]
 
         assert all(actual["Model A MAPE"].notna())
+
+    def test_for_model_suggestion(self):
+        """Test that the comparison table provide a model suggestion for each combination base on measuring metric"""
+
+        input_df = pd.DataFrame(
+            # fmt: off
+            data={
+                'SpendMonth': [datetime.date(2021, month, 1) for month in range(1, 12 + 1)] * 4,
+                'Category': ['Construction'] * 24 + ['Digital Future'] * 24,
+                'MarketSector': ['Health'] * 12 + ['Education']  * 12 + ['Health'] * 12 + ['Education']  * 12,
+                'EvidencedSpend': [1000 + 100 * random() for _ in range(12)] + [2000 + 100 * random() for _ in range(12)] + [3000 + 100 * random() for _ in range(12)] + [4000 + 100 * random() for _ in range(12)]
+            }
+            # fmt: on
+        )
+
+        models = [
+            create_mock_model(name="Model A", randomness=0.1),
+            create_mock_model(name="Model B", randomness=0.1),
+        ]
+
+        actual = create_models_comparison(
+            input_df=input_df,
+            train_ratio=0.9,
+            models=models,
+        )
+
+        # fmt: off
+        for category in ['Construction', 'Digital Future']:
+            for market_sector in ['Health', 'Education']:
+                rows_for_current_combination = actual[(actual["Category"] == category) & (actual["MarketSector"] == market_sector)]
+
+                # check that for each combination, every row should suggest the same model
+                assert len(set(rows_for_current_combination["Model Suggested"])) == 1
+
+                # check that the suggestion agrees with the MAPE score. The model with lower MAPE should be chosen.
+                first_row = rows_for_current_combination.head(1)
+
+                if (first_row["Model A MAPE"] <= first_row["Model B MAPE"]).bool():
+                    assert all(rows_for_current_combination["Model Suggested"] == "Model A")
+                else:
+                    assert all(rows_for_current_combination["Model Suggested"] == "Model B")
+        # fmt: on

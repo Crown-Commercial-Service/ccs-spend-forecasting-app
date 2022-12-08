@@ -129,6 +129,17 @@ def create_models_comparison(
             how="left",
         )
 
+    # fill in the model suggestion for each combination
+    metric_column_names = [f"{model.name} MAPE" for model in models]
+
+    comparison_table["Model Suggested"] = comparison_table[metric_column_names].idxmin(
+        axis=1
+    )
+    comparison_table["Model Suggested"].replace(
+        {f"{model.name} MAPE": model.name for model in models}, inplace=True
+    )
+
+    # sort the table by Category, MarketSector, Date before output
     comparison_table.sort_values(by=[*columns_to_consider, date_column], inplace=True)
 
     return comparison_table
