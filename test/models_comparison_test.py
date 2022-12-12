@@ -5,7 +5,10 @@ from random import random
 from unittest import TestCase
 
 from pipeline.jobs.mock_forecast import create_mock_model
-from pipeline.jobs.models_comparison import create_models_comparison
+from pipeline.jobs.models_comparison import (
+    create_models_comparison,
+    fill_in_model_suggestion,
+)
 
 
 class ModelComparisonTest(TestCase):
@@ -232,3 +235,33 @@ class ModelComparisonTest(TestCase):
 
         for column_name in expected_column_names:
             self.assertIn(column_name, list(actual.columns))
+
+    def test_fill_in_model_suggestion(self):
+        """Basic test for comparing models with only one Category/MarketSector combination in input data"""
+        comparison_table = pd.DataFrame(
+            # fmt: off
+            data={
+                'SpendMonth': [datetime.date(2022, 1, 1), datetime.date(2022, 2, 1), datetime.date(2022, 3, 1)],
+                'Category': ['Test Category'] * 3,
+                'MarketSector': ['Health'] * 3,
+                'EvidencedSpend': [1000.0, 1200.0, 800.0],
+                'Model A MAPE': [0.3, 0.4, 0.5],
+                'Model B MAPE': [0.4, 0.4, 0.4]
+            }
+            # fmt: on
+        )
+        models = [
+            create_mock_model(name="Model A", randomness=0.8),
+            create_mock_model(name="Model B", randomness=0.05),
+        ]
+
+        output_df = fill_in_model_suggestion(
+            comparison_table=comparison_table, models=models
+        )
+
+        assert "Model Suggested" in output_df.columns
+        assert list(output_df["Model Suggested"]) == [
+            "Model A",
+            "Model A",
+            "Model B",
+        ]
