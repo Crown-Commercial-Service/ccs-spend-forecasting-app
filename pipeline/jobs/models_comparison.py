@@ -129,6 +129,9 @@ def fill_in_model_forecast(
         start_month=start_month,
     ).rename(columns={"ForecastSpend": column_name_for_forecast(model_name)})
 
+    if model.amount_column in forecast.columns:
+        forecast.drop(columns=model.amount_column, inplace=True)
+
     return comparison_table.merge(
         right=forecast, on=[*columns_to_consider, date_column], how="inner"
     )
