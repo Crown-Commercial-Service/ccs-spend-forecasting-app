@@ -19,6 +19,7 @@ pyarrow = "^10.0.0"
 jupyter = "^1.0.0"
 black = "^22.10.0"
 pylint = "^2.15.7"
+prophet = "^1.1.1"
 
 [tool.poetry.dev-dependencies]
 azure-identity = "^1.12.0"
