@@ -9,7 +9,8 @@ import pandas as pd
 from matplotlib import pyplot as plt
 from matplotlib.dates import date2num
 from pandas.errors import SettingWithCopyWarning
-from sklearn.metrics import mean_squared_error, mean_absolute_error
+from prophet import Prophet
+from sklearn.metrics import mean_squared_error, mean_absolute_error, mean_absolute_percentage_error
 from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 from statsmodels.stats.diagnostic import acorr_ljungbox
 from statsmodels.tools.sm_exceptions import ConvergenceWarning
@@ -19,9 +20,9 @@ from statsmodels.tsa.stattools import adfuller
 
 from utils import get_logger, get_database_connection
 
-pd.set_option('display.max_rows', 0)
-pd.set_option('display.max_columns', 0)
-pd.set_option('expand_frame_repr', False)
+pd.set_option("display.max_rows", 0)
+pd.set_option("display.max_columns", 0)
+pd.set_option("expand_frame_repr", False)
 
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -110,6 +111,9 @@ def get_category_sector(index: int = 0) -> Tuple[str, str]:
     Returns:
         Category and market sector
 
+    Raises:
+        Value Error if index is our of range.
+
     """
     category_sector_list = [("Workforce Health & Education", "Health"),
                             ("Document Management & Logistics", "Education"),
@@ -179,7 +183,6 @@ def get_category_sector(index: int = 0) -> Tuple[str, str]:
                             ("Technology Solutions & Outcomes", "Infrastructure"),
                             ("Fleet", "Culture, Media and Sport"), ("Marcomms & Research", "Health"),
                             ("Marcomms & Research", "Infrastructure"), ("Technology Products & Services", "Unassigned"),
-                            ("Managed Service", "Defence and Security"),
                             ("People Services", "Culture, Media and Sport"),
                             ("Technology Solutions & Outcomes", "Culture, Media and Sport"),
                             ("Workforce Health & Education", "Infrastructure"), ("Marcomms & Research", "Education"),
@@ -197,21 +200,35 @@ def get_category_sector(index: int = 0) -> Tuple[str, str]:
                             ("People Services", "Unassigned"), ("Contact Centres", "Defence and Security"),
                             ("Professional Services", "Unassigned"), ("Marcomms & Research", "Unassigned"),
                             ("Contact Centres", "Health"), ("Financial Planning & Estates", "Government Policy"),
-                            ("Contact Centres", "Education"), ("Managed Service", "Government Policy"),
+                            ("Contact Centres", "Education"),
                             ("PSR & Permanent Recruitment", "Unassigned"),
-                            ("Commodities and Innovation", "Government Policy"), ("Contact Centres", "Infrastructure"),
-                            ("Contact Centres", "Local Community and Housing"),
+                            ("Commodities and Innovation", "Government Policy"),
+                            ("Contact Centres", "Infrastructure"),
+
+                            # Below 4 have just 67 records
                             ("Financial Planning & Estates", "Defence and Security"),
                             ("Financial Planning & Estates", "Culture, Media and Sport"),
                             ("Financial Planning & Estates", "Education"),
                             ("Financial Planning & Estates", "Local Community and Housing"),
-                            ("Contact Centres", "Unassigned"), ("Contact Centres", "Culture, Media and Sport"),
-                            ("Managed Service", "Education"), ("Managed Service", "Unassigned"),
-                            ("Below Threshold", "Health"), ("Financial Planning & Estates", "Unassigned"),
-                            ("Managed Service", "Infrastructure"), ("Below Threshold", "Defence and Security"),
-                            ("Below Threshold", "Local Community and Housing"),
-                            ("Below Threshold", "Government Policy"), ("Below Threshold", "Education"),
-                            ("Below Threshold", "Culture, Media and Sport")]
+                            # Data is too less for the below
+                            # ("Contact Centres", "Local Community and Housing"),
+                            # ("Contact Centres", "Unassigned"),
+                            # ("Contact Centres", "Culture, Media and Sport"),
+                            # ("Managed Service", "Defence and Security"),
+                            # ("Financial Planning & Estates", "Unassigned"),
+                            # ("Below Threshold", "Health"),
+                            # ("Managed Service", "Government Policy"),
+                            # ("Managed Service", "Unassigned"),
+                            # ("Managed Service", "Infrastructure"),
+                            # ("Managed Service", "Education"),
+                            # ("Below Threshold", "Defence and Security"),
+                            # ("Below Threshold", "Local Community and Housing"),
+                            # ("Below Threshold", "Government Policy"),
+                            # ("Below Threshold", "Education"),
+                            # ("Below Threshold", "Culture, Media and Sport")
+                            ]
+    if index < 0 or index > len(category_sector_list):
+        raise ValueError("Index or of range")
     return category_sector_list[index]
 
 
@@ -341,70 +358,31 @@ def is_spend_random_walk(df: pd.DataFrame, category: str, sector: str, run: bool
                     plt.show()
 
 
-def arma_aic_scores(timeseries: Union[pd.Series, np.ndarray, list], pq_combinations: list) -> pd.DataFrame:
-    """Returns Akike Information Criteria (AIC) in ascending order for all models trained using the given parameters.
+def get_aic_scores(timeseries: Union[pd.Series, np.ndarray, list],
+                   ps: Union[list, range] = None, qs: Union[list, range] = None,
+                   Ps: Union[list, range] = None, Qs: Union[list, range] = None,
+                   d: int = 0, D: int = 0,
+                   s: int = 0) -> pd.DataFrame:
+    """
+    Calculate the AIC scores of using all the provided parameter
     Args:
         timeseries: Timeseries data
-        pq_combinations: List of all combination of p and q that you want to test
-
-    Returns:
-        DataFrame containing parameters and its respective aic score, sorted by aic score ascending.
-
-    """
-    aic_scores = []
-    for p, q in pq_combinations:
-        d = 0
-        model = SARIMAX(timeseries, order=(p, d, q), simple_differencing=False).fit(disp=False)
-        aic = model.aic
-        aic_scores.append([p, q, aic])
-
-    df = pd.DataFrame(data=aic_scores, columns=["p", "q", "aic"]) \
-        .sort_values(by="aic", ascending=True) \
-        .reset_index(drop=True)
-
-    return df
-
-
-def arima_aic_scores(timeseries: Union[pd.Series, np.ndarray, list], pq_combinations: list, d: int) -> pd.DataFrame:
-    """Returns Akike Information Criteria (AIC) in ascending order for all models trained using the given parameters.
-
-    Args:
-        timeseries: Timeseries data
-        pq_combinations: List of all combination of p and q that you want to test
-        d: Integration order
-
-    Returns:
-        DataFrame containing parameters and its respective aic score, sorted by aic score ascending.
-
-    """
-    aic_scores = []
-    for p, q in pq_combinations:
-        model = SARIMAX(timeseries, order=(p, d, q), simple_differencing=False).fit(disp=False)
-        aic = model.aic
-        aic_scores.append([p, q, aic])
-
-    df = pd.DataFrame(data=aic_scores, columns=["p", "q", "aic"]) \
-        .sort_values(by="aic", ascending=True) \
-        .reset_index(drop=True)
-
-    return df
-
-
-def sarima_aic_scores(timeseries: Union[pd.Series, np.ndarray, list], pqPQ_combinations: list, d: int, D: int,
-                      s: int) -> pd.DataFrame:
-    """
-
-    Args:
-        timeseries: Timeseries data
-        pqPQ_combinations: List of all combination of p, q, P and Q that you want to test
+        ps: List of all possible values of p that you want to test
+        qs: List of all possible values of q that you want to test
+        Ps: List of all possible values of P that you want to test
+        Qs: List of all possible values of Q that you want to test
         d: Integration order for the series
         D: Integration order for seasonality
         s: Seasonality
-
     Returns:
         DataFrame containing parameters and its respective aic score, sorted by aic score ascending.
-
     """
+    ps = ps if ps else [0]
+    qs = qs if qs else [0]
+    Ps = Ps if Ps else [0]
+    Qs = Qs if Qs else [0]
+    pqPQ_combinations = list(product(ps, qs, Ps, Qs))
+
     aic_scores = []
     for p, q, P, Q in pqPQ_combinations:
         try:
@@ -413,7 +391,7 @@ def sarima_aic_scores(timeseries: Union[pd.Series, np.ndarray, list], pqPQ_combi
             aic = model.aic
             aic_scores.append([p, q, d, P, Q, D, s, aic])
         except Exception as e:
-            logger.error(f"Error while calculating SARIMA aic scores: {e}")
+            logger.error(f"Error while calculating aic scores: {e}")
 
     df = pd.DataFrame(data=aic_scores, columns=["p", "q", "d", "P", "Q", "D", "s", "aic"]) \
         .sort_values(by="aic", ascending=True) \
@@ -480,7 +458,7 @@ def rolling_forecast(df: pd.DataFrame, train_size: int, prediction_size: int, wi
         prediction_size: Number of future timesteps that needs to be predicted.
         window: The window of prediction or the order of the AR(p) process for SARIMAX i.e. how many steps are predicted
                 at a time.
-        method: A string to tell which model to calculate i.e Historical mean (mean), last know (last_value) value or
+        method: A string to tell which model to calculate i.e. Historical mean (mean), last know (last_value) value or
                 ARMA(p,q)
         p: Order of AR process
         q: Order of MA process
@@ -516,20 +494,6 @@ def rolling_forecast(df: pd.DataFrame, train_size: int, prediction_size: int, wi
         return pred_ARMA
     else:
         return []
-
-
-def mean_absolute_percentage_error(y_true: Union[pd.Series, np.ndarray, list],
-                                   y_pred: Union[pd.Series, np.ndarray, list]) -> float:
-    """Calculates the Mean Absolute Percentage Error between true value and predicted value
-    Args:
-        y_true: True values
-        y_pred: Predicted values
-
-    Returns:
-        Mean Absolute Percentage Error
-
-    """
-    return np.mean(np.abs((y_true - y_pred) / y_true)) * 100
 
 
 def model_arma(df: pd.DataFrame, category: str, sector: str, run: bool = False):
@@ -626,13 +590,14 @@ def model_arma(df: pd.DataFrame, category: str, sector: str, run: bool = False):
 
             ps = range(0, 4, 1)  # Possible value of order p of AR(p)
             qs = range(0, 4, 1)  # Possible value of order q of MA(q)
-            pq_combinations = list(product(ps, qs))
-            aic_scores = arma_aic_scores(train["diff"], pq_combinations)
-            logger.debug(f"AIC scores are:\n{aic_scores.head(len(pq_combinations))}")
+
+            aic_scores = get_aic_scores(train["diff"], ps=ps, qs=qs)
+            logger.debug(f"AIC scores are:\n{aic_scores.head(len(ps) * len(qs))}")
             lowest_aic_score = aic_scores.iloc[0]
             best_p = int(lowest_aic_score["p"])
             best_q = int(lowest_aic_score["q"])
             logger.debug(f"Best p is: {best_p} and best q is {best_q}")
+
             d = 0
             model = SARIMAX(train["diff"], order=(best_p, d, best_q), simple_differencing=False)
             model_fit = model.fit(disp=False)
@@ -728,11 +693,11 @@ def model_arma(df: pd.DataFrame, category: str, sector: str, run: bool = False):
             logger.debug(f"Mean Absolute Error of ARMA on original data: {mae_arma:.2f}")
 
             mape_mean = mean_absolute_percentage_error(category_sector_spend["EvidencedSpend"][-test_size:],
-                                                       category_sector_spend["forecast_mean"][-test_size:])
+                                                       category_sector_spend["forecast_mean"][-test_size:]) * 100.
             mape_last = mean_absolute_percentage_error(category_sector_spend["EvidencedSpend"][-test_size:],
-                                                       category_sector_spend["forecast_last_value"][-test_size:])
+                                                       category_sector_spend["forecast_last_value"][-test_size:]) * 100.
             mape_arma = mean_absolute_percentage_error(category_sector_spend["EvidencedSpend"][-test_size:],
-                                                       category_sector_spend["forecast"][-test_size:])
+                                                       category_sector_spend["forecast"][-test_size:]) * 100.
             logger.debug(f"Mean Absolute Percentage Error of mean on original data: {mape_mean:.2f}")
             logger.debug(f"Mean Absolute Percentage Error of last on original data: {mape_last:.2f}")
             logger.debug(f"Mean Absolute Percentage Error of ARMA on original data: {mape_arma:.2f}")
@@ -821,14 +786,12 @@ def model_arima(df: pd.DataFrame, category: str, sector: str, run: bool = False)
 
         ps = range(0, 4, 1)  # Possible value of order p of AR(p)
         qs = range(0, 4, 1)  # Possible value of order q of MA(q)
-        pq_combinations = list(product(ps, qs))
-        logger.info(f"Possible pair of p and q are: {pq_combinations}")
-        aic_scores = arima_aic_scores(train["EvidencedSpend"], pq_combinations, d)
-        logger.debug(f"AIC scores are:\n{aic_scores.head(len(pq_combinations))}")
+        aic_scores = get_aic_scores(train["EvidencedSpend"], ps=ps, qs=qs, d=d)
+        logger.debug(f"AIC scores are:\n{aic_scores.head(len(ps) * len(qs))}")
         lowest_aic_score = aic_scores.iloc[0]
         best_p = int(lowest_aic_score["p"])
         best_q = int(lowest_aic_score["q"])
-        print(f"Best p is: {best_p} and best q is {best_q}")
+        logger.debug(f"Best p is: {best_p} and best q is {best_q}")
 
         model = SARIMAX(train["EvidencedSpend"], order=(best_p, d, best_q), simple_differencing=False)
         model_fit = model.fit(disp=False)
@@ -863,8 +826,9 @@ def model_arima(df: pd.DataFrame, category: str, sector: str, run: bool = False)
         plt.show()
 
         last_month_mean_absolute_percentage_error = mean_absolute_percentage_error(test["EvidencedSpend"],
-                                                                                   test["last_month"])
-        arima_mean_absolute_percentage_error = mean_absolute_percentage_error(test["EvidencedSpend"], test["forecast"])
+                                                                                   test["last_month"]) * 100.
+        arima_mean_absolute_percentage_error = mean_absolute_percentage_error(test["EvidencedSpend"],
+                                                                              test["forecast"]) * 100.
         logger.debug(f"Last Month mean absolute percentage error....: {last_month_mean_absolute_percentage_error:.2f}")
         logger.debug(f"ARIMA seasonal mean absolute percentage error: {arima_mean_absolute_percentage_error:.2f}")
 
@@ -965,9 +929,8 @@ def model_sarima(df: pd.DataFrame, category: str, sector: str, run: bool = False
         Qs = [0]  # Seasonality is 0 for ARIMA
         D = 0
         s = 12  # s is same as m
-        pqPQ_combinations = list(product(ps, qs, Ps, Qs))
-        aic_scores = sarima_aic_scores(train["EvidencedSpend"], pqPQ_combinations, d, D, s)
-        logger.debug(f"AIC scores are:\n{aic_scores.head(len(pqPQ_combinations))}")
+        aic_scores = get_aic_scores(train["EvidencedSpend"], ps=ps, qs=qs, Ps=Ps, Qs=Qs, d=d, D=D, s=s)
+        logger.debug(f"AIC scores are:\n{aic_scores.head(len(ps) * len(qs) * len(Ps) * len(Qs))}")
         lowest_aic_score = aic_scores.iloc[0]
         best_p = int(lowest_aic_score["p"])
         best_q = int(lowest_aic_score["q"])
@@ -997,7 +960,6 @@ def model_sarima(df: pd.DataFrame, category: str, sector: str, run: bool = False
         ax3.set_ylabel("Seasonal")
         ax4.plot(decomposition.resid)
         ax4.set_ylabel("Residuals")
-        # plt.xticks(labels)
         plt.suptitle("Decomposing the dataset")
         fig.autofmt_xdate()
         plt.tight_layout()
@@ -1008,16 +970,15 @@ def model_sarima(df: pd.DataFrame, category: str, sector: str, run: bool = False
         qs = range(0, 4, 1)
         Ps = range(0, 4, 1)
         Qs = range(0, 4, 1)
-        pqPQ_combinations = list(product(ps, qs, Ps, Qs))
-        # d = 1
-        aic_scores = sarima_aic_scores(train["EvidencedSpend"], pqPQ_combinations, d, D, s)
-        logger.debug(f"AIC scores are:\n{aic_scores.head(len(pqPQ_combinations))}")
+        aic_scores = get_aic_scores(train["EvidencedSpend"], ps=ps, qs=qs, Ps=Ps, Qs=Qs, d=d, D=D, s=s)
+        logger.debug(f"AIC scores are:\n{aic_scores.head(len(ps) * len(qs) * len(Ps) * len(Qs))}")
         lowest_aic_score = aic_scores.iloc[0]
         best_p = int(lowest_aic_score["p"])
         best_q = int(lowest_aic_score["q"])
         best_P = int(lowest_aic_score["P"])
         best_Q = int(lowest_aic_score["Q"])
-        logger.debug(f"Best p is: {best_p}\nBest q is {best_q}\nBest P is: {best_P}\nBest Q is: {best_Q}")
+        logger.debug(f"Best p is:\n{best_p}\nBest q is {best_q}\nBest P is: {best_P}\nBest Q is: {best_Q}")
+
         sarima_model = SARIMAX(train["EvidencedSpend"], order=(best_p, d, best_q),
                                seasonal_order=(best_P, D, best_Q, s),
                                simple_differencing=False)
@@ -1033,8 +994,8 @@ def model_sarima(df: pd.DataFrame, category: str, sector: str, run: bool = False
         logger.debug("Performing Ljung-Box test on for the residuals, on 10 lags")
         residuals = sarima_model_fit.resid
         is_residual_white_noise = ljung_box_residual_test(residuals)
-        logger.debug("Is SARIMA({best_p},{d},{best_q})({best_P},{D},{best_Q}){s} residual just random error?",
-                     is_residual_white_noise)
+        logger.debug(f"Is SARIMA({best_p},{d},{best_q})({best_P},{D},{best_Q}){s} residual just random error? " +
+                     f"{is_residual_white_noise}")
         sarima_pred = sarima_model_fit.get_prediction(train_size, dataset_size - 1).predicted_mean
         test["sarima_forecast"] = sarima_pred
         logger.debug(f"SARIMA({best_p},{d},{best_q})({best_P},{D},{best_Q}){s} prediction are:\n{test.head(test_size)}")
@@ -1058,11 +1019,11 @@ def model_sarima(df: pd.DataFrame, category: str, sector: str, run: bool = False
         plt.show()
 
         last_month_mean_absolute_percentage_error = mean_absolute_percentage_error(test["EvidencedSpend"],
-                                                                                   test["last_month"])
+                                                                                   test["last_month"]) * 100.
         arima_mean_absolute_percentage_error = mean_absolute_percentage_error(test["EvidencedSpend"],
-                                                                              test["arima_forecast"])
+                                                                              test["arima_forecast"]) * 100.
         sarima_mean_absolute_percentage_error = mean_absolute_percentage_error(test["EvidencedSpend"],
-                                                                               test["sarima_forecast"])
+                                                                               test["sarima_forecast"]) * 100.
         logger.debug(f"Last Month absolute percentage error..........: {last_month_mean_absolute_percentage_error:.2f}")
         logger.debug(f"ARIMA seasonal mean absolute percentage error.: {arima_mean_absolute_percentage_error:.2f}")
         logger.debug(f"SARIMA seasonal mean absolute percentage error: {sarima_mean_absolute_percentage_error:.2f}")
@@ -1101,10 +1062,368 @@ def model_sarima(df: pd.DataFrame, category: str, sector: str, run: bool = False
         plt.show()
 
 
+def model_prophet(df: pd.DataFrame, category: str, sector: str, run: bool = False):
+    """Forecast the data using Prophet.
+
+        Args:
+            df: DataFrame containing data
+            category: Category for which spend data should be forecasted
+            sector: Market sector for which spend data should be forecasted
+            run: A flag to run this function, pass true to run this function
+
+        Returns:
+            None
+
+        """
+    if run:
+        category_sector_spend: pd.DataFrame = df[(df["Category"] == category) & (df["MarketSector"] == sector)] \
+            .reset_index(drop=True)
+        logger.debug(f"Dataset size is: {category_sector_spend.shape[0]}")
+        spend = category_sector_spend["EvidencedSpend"]
+        labels = pd.date_range(start=category_sector_spend["SpendMonth"].min(axis=0),
+                               end=category_sector_spend["SpendMonth"].max(axis=0),
+                               freq="MS").tolist()[::4]
+        fig_size = (12, 6)
+        fig, ax = plt.subplots(figsize=fig_size)
+        ax.plot(category_sector_spend["SpendMonth"], spend / 1e6, label=f"{category}:{sector}")
+        ax.set_xlabel("Month")
+        ax.set_ylabel("Monthly Spend (Millions £)")
+        plt.xticks(labels)
+        plt.title(f"Monthly Spend (Millions £) for\n{category} : {sector}")
+        fig.autofmt_xdate()
+        plt.tight_layout()
+        plt.legend()
+        plt.show()
+
+        dataset_size = len(category_sector_spend)
+        train_ratio = 0.9
+        train_size = int(dataset_size * train_ratio)
+        test_size = dataset_size - train_size
+
+        logger.debug(f"Size of dataset is {dataset_size} training set is {train_size} and test size is: {test_size}")
+
+        train = category_sector_spend[:train_size]
+        test = category_sector_spend[train_size:]
+        test["last_month"] = category_sector_spend["EvidencedSpend"].iloc[train_size - 1:dataset_size - 1].values
+
+        fig, ax = plt.subplots(figsize=fig_size)
+        ax.plot(category_sector_spend["SpendMonth"], spend / 1e6, label=f"{category}:{sector}")
+        ax.set_xlabel("Month")
+        ax.set_ylabel("Monthly Spend (Millions£)")
+        ax.axvspan(date2num(category_sector_spend["SpendMonth"].iloc[-test_size]),
+                   date2num(category_sector_spend["SpendMonth"].iloc[-1]),
+                   color="#808080", alpha=0.2)
+        plt.xticks(labels)
+        plt.title("Train and test sets")
+        fig.autofmt_xdate()
+        plt.tight_layout()
+        plt.show()
+
+        d = find_integration_order(spend)
+        logger.debug(f"Integration order is {d}")
+
+        ps = range(0, 4, 1)  # Possible value of order p of AR(p)
+        qs = range(0, 4, 1)  # Possible value of order q of MA(q)
+        Ps = [0]  # Seasonality is 0 for ARIMA
+        Qs = [0]  # Seasonality is 0 for ARIMA
+        D = 0
+        s = 12  # s is same as m
+        aic_scores = get_aic_scores(train["EvidencedSpend"], ps=ps, qs=qs, Ps=Ps, Qs=Qs, d=d, D=D, s=s)
+        logger.debug(f"AIC scores are:\n{aic_scores.head(len(ps) * len(qs) * len(Ps) * len(Qs))}")
+        lowest_aic_score = aic_scores.iloc[0]
+        best_p = int(lowest_aic_score["p"])
+        best_q = int(lowest_aic_score["q"])
+        logger.debug(f"Best p is: {best_p} and best q is {best_q}")
+
+        model = SARIMAX(train["EvidencedSpend"], order=(best_p, d, best_q), seasonal_order=(Ps[0], D, Qs[0], s),
+                        simple_differencing=False)
+        model_fit = model.fit(disp=False)
+        logger.debug(f"Model fir summary:\n{model_fit.summary()}")
+        fig = model_fit.plot_diagnostics(figsize=(10, 8))
+        fig.suptitle(f"ARMIA({best_p},{d},{best_q}) model diagnostics")
+        plt.show()
+
+        residuals = model_fit.resid
+        is_residual_white_noise = ljung_box_residual_test(residuals)
+        logger.debug(f"Is ARMIA({best_p},{d},{best_q}) residual just random error? {is_residual_white_noise}")
+
+        arima_pred = model_fit.get_prediction(train_size, dataset_size - 1).predicted_mean
+        test["arima_forecast"] = arima_pred
+
+        D = find_seasonal_integration_order(spend, s=s)
+        Ps = range(0, 4, 1)
+        Qs = range(0, 4, 1)
+        aic_scores = get_aic_scores(train["EvidencedSpend"], ps=ps, qs=qs, Ps=Ps, Qs=Qs, d=d, D=D, s=s)
+        logger.debug(f"AIC scores are:\n{aic_scores.head(len(ps) * len(qs) * len(Ps) * len(Qs))}")
+        lowest_aic_score = aic_scores.iloc[0]
+        best_p = int(lowest_aic_score["p"])
+        best_q = int(lowest_aic_score["q"])
+        best_P = int(lowest_aic_score["P"])
+        best_Q = int(lowest_aic_score["Q"])
+        logger.debug(f"\nBest p is: {best_p}\nBest q is {best_q}\nBest P is: {best_P}\nBest Q is: {best_Q}")
+
+        sarima_model = SARIMAX(train["EvidencedSpend"], order=(best_p, d, best_q),
+                               seasonal_order=(best_P, D, best_Q, s),
+                               simple_differencing=False)
+        sarima_model_fit = sarima_model.fit(disp=False)
+        try:
+            fig = sarima_model_fit.plot_diagnostics(figsize=(10, 8))
+            fig.suptitle(f"Residuals diagnostics of the SARIMA({best_p},{d},{best_q})({best_P},{D},{best_Q}){s} model")
+            plt.show()
+        except Exception as e:
+            logger.error(f"Exception occured due to {e}")
+
+        logger.debug("Performing Ljung-Box test on for the residuals, on 10 lags")
+        residuals = sarima_model_fit.resid
+        is_residual_white_noise = ljung_box_residual_test(residuals)
+        logger.debug(f"Is SARIMA({best_p},{d},{best_q})({best_P},{D},{best_Q}){s} residual just random error? " +
+                     f"{is_residual_white_noise}")
+
+        sarima_pred = sarima_model_fit.get_prediction(train_size, dataset_size - 1).predicted_mean
+        test["sarima_forecast"] = sarima_pred
+
+        train_prophet = train[["SpendMonth", "EvidencedSpend"]]
+        test_prophet = test[["SpendMonth", "EvidencedSpend"]]
+        train_prophet.columns = ["ds", "y"]
+        test_prophet.columns = ["ds", "y"]
+
+        changepoint_prior_scale_values = [0.001, 0.01, 0.1, 0.5]
+        seasonality_prior_scale_values = [0.01, 0.1, 1.0, 10.0]
+
+        lowest_mape = []
+        for changepoint_prior_scale, seasonality_prior_scale in list(product(changepoint_prior_scale_values,
+                                                                             seasonality_prior_scale_values)):
+            m = Prophet(changepoint_prior_scale=changepoint_prior_scale,
+                        seasonality_prior_scale=seasonality_prior_scale)
+            m.add_country_holidays(country_name="UK")
+            m.fit(train_prophet)
+            future = m.make_future_dataframe(periods=test_size, freq="M")
+            forecast = m.predict(future)
+            test_prophet[["yhat", "yhat_lower", "yhat_upper"]] = forecast[["yhat", "yhat_lower", "yhat_upper"]]
+            prohet_mean_absolute_percentage_error = mean_absolute_percentage_error(test_prophet["y"],
+                                                                                   test_prophet["yhat"]) * 100.
+            lowest_mape.append((changepoint_prior_scale, seasonality_prior_scale,
+                                prohet_mean_absolute_percentage_error))
+
+        mape_scores = pd.DataFrame(data=lowest_mape, columns=["changepoint_prior_scale", "seasonality_prior_scale",
+                                                              "min_score"]) \
+            .sort_values(by="min_score", ascending=True).reset_index(drop=True)
+        logger.debug(f"MAPE Scores:\n{mape_scores.head(len(lowest_mape))}")
+        best_params = mape_scores.iloc[0]
+        best_changepoint_prior_scale = float(best_params["changepoint_prior_scale"])
+        best_seasonality_prior_scale = float(best_params["seasonality_prior_scale"])
+        logger.debug(f"Best changepoint_prior_scale: {best_changepoint_prior_scale}")
+        logger.debug(f"Best seasonality_prior_scale: {best_seasonality_prior_scale}")
+
+        m = Prophet(changepoint_prior_scale=best_changepoint_prior_scale,
+                    seasonality_prior_scale=best_seasonality_prior_scale)
+        m.add_country_holidays(country_name="UK")
+        m.fit(train_prophet)
+        future = m.make_future_dataframe(periods=test_size, freq="M")
+        forecast = m.predict(future)
+        test_prophet[["yhat", "yhat_lower", "yhat_upper"]] = forecast[["yhat", "yhat_lower", "yhat_upper"]]
+        test["prophet_forecast"] = test_prophet["yhat"]
+
+        fig, ax = plt.subplots()
+        ax.plot(category_sector_spend["SpendMonth"], spend / 1e6, label=f"{category}:{sector}")
+        ax.plot(test["SpendMonth"], test["last_month"] / 1e6, "r:", label="Previous Month")
+        ax.plot(test["SpendMonth"], test["arima_forecast"] / 1e6, "k--", label=f"ARIMA({best_p},{d},{best_q})")
+        ax.plot(test["SpendMonth"], test["sarima_forecast"] / 1e6, "g--",
+                label=f"SARIMA({best_p},{d},{best_q})({best_P},{D},{best_Q}){s}")
+        ax.plot(test["SpendMonth"], test["prophet_forecast"] / 1e6, "m--", label="Prophet")
+        ax.set_xlabel("Month")
+        ax.set_ylabel("Monthly Spend (Millions £)")
+        ax.axvspan(date2num(category_sector_spend["SpendMonth"].iloc[-test_size]),
+                   date2num(category_sector_spend["SpendMonth"].iloc[-1]),
+                   color="#808080", alpha=0.2)
+        ax.legend(loc=2)
+        plt.xticks(labels)
+        plt.title("Forecast")
+        fig.autofmt_xdate()
+        plt.tight_layout()
+        plt.show()
+
+        last_month_mean_absolute_percentage_error = mean_absolute_percentage_error(test["EvidencedSpend"],
+                                                                                   test["last_month"]) * 100.
+        arima_mean_absolute_percentage_error = mean_absolute_percentage_error(test["EvidencedSpend"],
+                                                                              test["arima_forecast"]) * 100.
+        sarima_mean_absolute_percentage_error = mean_absolute_percentage_error(test["EvidencedSpend"],
+                                                                               test["sarima_forecast"]) * 100.
+        prophet_mean_absolute_percentage_error = mean_absolute_percentage_error(test["EvidencedSpend"],
+                                                                                test["prophet_forecast"]) * 100.
+        logger.debug(f"Last Month absolute percentage error.........: {last_month_mean_absolute_percentage_error:.2f}")
+        logger.debug(f"ARIMA seasonal mean absolute percentage error: {arima_mean_absolute_percentage_error:.2f}")
+        logger.debug(f"SARIMA seasonal mean absolute percentage error: {sarima_mean_absolute_percentage_error:.2f}")
+        logger.debug(f"Prophet mean absolute percentage error........: {prophet_mean_absolute_percentage_error:.2f}")
+
+        fig, ax = plt.subplots()
+        x = ["Last Month", f"ARIMA({best_p},{d},{best_q})", f"SARIMA({best_p},{d},{best_q})({best_P},{D},{best_Q}){s})",
+             "Prophet"]
+        y = [last_month_mean_absolute_percentage_error, arima_mean_absolute_percentage_error,
+             sarima_mean_absolute_percentage_error, prophet_mean_absolute_percentage_error]
+        ax.bar(x, y, width=0.4)
+        ax.set_xlabel("Models")
+        ax.set_ylabel('Mean Absolute Percentage Error (%)')
+        ax.set_ylim(0, 100)
+        for index, value in enumerate(y):
+            plt.text(x=index, y=value + 1, s=str(round(value, 2)), ha='center')
+        plt.title("Mean Absolute Percentage Error")
+        plt.tight_layout()
+        plt.show()
+
+        last_month_mae = mean_absolute_error(test["EvidencedSpend"], test["last_month"])
+        arima_mae = mean_absolute_error(test["EvidencedSpend"], test["arima_forecast"])
+        sarima_mae = mean_absolute_error(test["EvidencedSpend"], test["sarima_forecast"])
+        prophet_mae = mean_absolute_error(test["EvidencedSpend"], test["prophet_forecast"])
+        logger.debug(f"Last Month MAE.....: {last_month_mae:.2f}")
+        logger.debug(f"ARIMA seasonal MAE.: {arima_mae:.2f}")
+        logger.debug(f"SARIMA seasonal MAE: {sarima_mae:.2f}")
+        logger.debug(f"Prophet MAE........: {prophet_mae:.2f}")
+
+        fig, ax = plt.subplots()
+        x = ["Last Month", f"ARIMA({best_p},{d},{best_q})", f"SARIMA({best_p},{d},{best_q})({best_P},{D},{best_Q}){s}",
+             "Prophet"]
+        y = [last_month_mae / 1e6, arima_mae / 1e6, sarima_mae / 1e6, prophet_mae / 1e6]
+        ax.bar(x, y, width=0.4)
+        ax.set_xlabel("Models")
+        ax.set_ylabel("Mean Absolute Error")
+        # ax.set_ylim(0, 100)
+        for index, value in enumerate(y):
+            plt.text(x=index, y=value + 1, s=str(round(value, 2)), ha='center')
+        plt.title("Mean Absolute Error (Millions £)")
+        plt.tight_layout()
+        plt.show()
+
+        logger.debug(f"Forecast are:\n{test.head(test_size)}")
+
+
+def get_best_forecast(df: pd.DataFrame, category: str, sector: str, run: bool = False) -> pd.DataFrame:
+    """Generate the best forecast by comparing various models.
+
+        Args:
+            df: DataFrame containing data
+            category: Category for which spend data should be forecasted
+            sector: Market sector for which spend data should be forecasted
+            run: A flag to run this function, pass true to run this function
+
+        Returns:
+            DataFrame with the best forecast
+
+        """
+    if run:
+        category_sector_spend: pd.DataFrame = df[(df["Category"] == category) & (df["MarketSector"] == sector)] \
+            .reset_index(drop=True)
+        logger.debug(f"Dataset size is: {category_sector_spend.shape[0]}")
+        spend = category_sector_spend["EvidencedSpend"]
+
+        dataset_size = len(category_sector_spend)
+        train_ratio = 0.9
+        train_size = int(dataset_size * train_ratio)
+        test_size = dataset_size - train_size
+
+        logger.debug(f"Size of dataset is {dataset_size} training set is {train_size} and test size is: {test_size}")
+
+        train = category_sector_spend[:train_size]
+        test = category_sector_spend[train_size:]
+
+        d = find_integration_order(spend)
+
+        ps = range(0, 4, 1)  # Possible value of order p of AR(p)
+        qs = range(0, 4, 1)  # Possible value of order q of MA(q)
+        Ps = [0]  # Seasonality is 0 for ARIMA
+        Qs = [0]  # Seasonality is 0 for ARIMA
+        D = 0
+        s = 12  # s is same as m
+        aic_scores = get_aic_scores(train["EvidencedSpend"], ps=ps, qs=qs, Ps=Ps, Qs=Qs, d=d, D=D, s=s)
+        lowest_aic_score = aic_scores.iloc[0]
+        best_p = int(lowest_aic_score["p"])
+        best_q = int(lowest_aic_score["q"])
+
+        model = SARIMAX(train["EvidencedSpend"], order=(best_p, d, best_q), seasonal_order=(Ps[0], D, Qs[0], s),
+                        simple_differencing=False)
+        model_fit = model.fit(disp=False)
+        arima_pred = model_fit.get_prediction(train_size, dataset_size - 1).predicted_mean
+        test["arima_forecast"] = arima_pred
+
+        D = find_seasonal_integration_order(spend, s=s)
+        Ps = range(0, 4, 1)
+        Qs = range(0, 4, 1)
+        aic_scores = get_aic_scores(train["EvidencedSpend"], ps=ps, qs=qs, Ps=Ps, Qs=Qs, d=d, D=D, s=s)
+        lowest_aic_score = aic_scores.iloc[0]
+        best_p = int(lowest_aic_score["p"])
+        best_q = int(lowest_aic_score["q"])
+        best_P = int(lowest_aic_score["P"])
+        best_Q = int(lowest_aic_score["Q"])
+        sarima_model = SARIMAX(train["EvidencedSpend"], order=(best_p, d, best_q),
+                               seasonal_order=(best_P, D, best_Q, s),
+                               simple_differencing=False)
+        sarima_model_fit = sarima_model.fit(disp=False)
+        sarima_pred = sarima_model_fit.get_prediction(train_size, dataset_size - 1).predicted_mean
+        test["sarima_forecast"] = sarima_pred
+
+        train_prophet = train[["SpendMonth", "EvidencedSpend"]]
+        test_prophet = test[["SpendMonth", "EvidencedSpend"]]
+        train_prophet.columns = ["ds", "y"]
+        test_prophet.columns = ["ds", "y"]
+
+        changepoint_prior_scale_values = [0.001, 0.01, 0.1, 0.5]
+        seasonality_prior_scale_values = [0.01, 0.1, 1.0, 10.0]
+
+        lowest_mape = []
+        for changepoint_prior_scale, seasonality_prior_scale in list(product(changepoint_prior_scale_values,
+                                                                             seasonality_prior_scale_values)):
+            m = Prophet(changepoint_prior_scale=changepoint_prior_scale,
+                        seasonality_prior_scale=seasonality_prior_scale)
+            m.add_country_holidays(country_name="UK")
+            m.fit(train_prophet)
+            future = m.make_future_dataframe(periods=test_size, freq="M")
+            forecast = m.predict(future)
+            test_prophet[["yhat", "yhat_lower", "yhat_upper"]] = forecast[["yhat", "yhat_lower", "yhat_upper"]]
+            prohet_mean_absolute_percentage_error = mean_absolute_percentage_error(test_prophet["y"],
+                                                                                   test_prophet["yhat"]) * 100.
+            lowest_mape.append((changepoint_prior_scale, seasonality_prior_scale,
+                                prohet_mean_absolute_percentage_error))
+
+        mape_scores = pd.DataFrame(
+            data=lowest_mape, columns=["changepoint_prior_scale", "seasonality_prior_scale", "min_score"]) \
+            .sort_values(by="min_score", ascending=True).reset_index(drop=True)
+        best_params = mape_scores.iloc[0]
+        best_changepoint_prior_scale = float(best_params["changepoint_prior_scale"])
+        best_seasonality_prior_scale = float(best_params["seasonality_prior_scale"])
+
+        m = Prophet(changepoint_prior_scale=best_changepoint_prior_scale,
+                    seasonality_prior_scale=best_seasonality_prior_scale)
+        m.add_country_holidays(country_name="UK")
+        m.fit(train_prophet)
+        future = m.make_future_dataframe(periods=test_size, freq="M")
+        forecast = m.predict(future)
+        test_prophet[["yhat", "yhat_lower", "yhat_upper"]] = forecast[["yhat", "yhat_lower", "yhat_upper"]]
+        test["prophet_forecast"] = test_prophet["yhat"]
+
+        arima_mae = mean_absolute_error(test["EvidencedSpend"], test["arima_forecast"])
+        sarima_mae = mean_absolute_error(test["EvidencedSpend"], test["sarima_forecast"])
+        prophet_mae = mean_absolute_error(test["EvidencedSpend"], test["prophet_forecast"])
+        logger.debug(f"ARIMA seasonal MAE.: {arima_mae:.2f}")
+        logger.debug(f"SARIMA seasonal MAE: {sarima_mae:.2f}")
+        logger.debug(f"Prophet MAE........: {prophet_mae:.2f}")
+
+        best_mae = np.argmin(np.array([arima_mae, sarima_mae, prophet_mae]))
+        forecast = test[["SpendMonth", "Category", "MarketSector", "EvidencedSpend"]]
+        if best_mae == 0:
+            forecast["Forecast"] = test["arima_forecast"]
+        elif best_mae == 1:
+            forecast["Forecast"] = test["sarima_forecast"]
+        elif best_mae == 2:
+            forecast["Forecast"] = test["prophet_forecast"]
+
+        return forecast
+
+
 def main():
     parser = argparse.ArgumentParser(usage="data_analysis.py [path to local dataset (optional)] ",
                                      description="Exploratory Data Analysis")
     parser.add_argument("--local_data_path", default=None, metavar="Path to the local dataset folder", type=str)
+
     parsed = parser.parse_args()
     local_data_path = parsed.local_data_path
 
@@ -1117,6 +1436,7 @@ def main():
     model_arma(prepared_df, category=category, sector=sector, run=False)
     model_arima(prepared_df, category=category, sector=sector, run=False)
     model_sarima(prepared_df, category=category, sector=sector, run=False)
+    model_prophet(prepared_df, category=category, sector=sector, run=False)
 
 
 if __name__ == '__main__':
