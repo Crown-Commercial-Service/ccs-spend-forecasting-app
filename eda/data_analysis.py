@@ -210,7 +210,7 @@ def get_category_sector(index: int = 0) -> Tuple[str, str]:
                             ("Financial Planning & Estates", "Culture, Media and Sport"),
                             ("Financial Planning & Estates", "Education"),
                             ("Financial Planning & Estates", "Local Community and Housing"),
-                            # Data is too less for the below
+                            # Data is too less for the below, so we are not using it.
                             # ("Contact Centres", "Local Community and Housing"),
                             # ("Contact Centres", "Unassigned"),
                             # ("Contact Centres", "Culture, Media and Sport"),
