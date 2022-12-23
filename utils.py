@@ -3,6 +3,7 @@ from configparser import ConfigParser
 
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Connection
+from pipeline.utils import is_running_in_databricks
 
 
 def get_logger() -> logging.Logger:
@@ -13,7 +14,11 @@ def get_logger() -> logging.Logger:
 
     """
 
-    logging.config.fileConfig("logging.conf")
+    config_file_location = (
+        "/dbfs/logging.conf" if is_running_in_databricks() else "logging.conf"
+    )
+
+    logging.config.fileConfig(config_file_location)
     logger = logging.getLogger("ccsForecast")
     return logger
 
