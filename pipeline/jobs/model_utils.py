@@ -28,12 +28,12 @@ def find_integration_order(timeseries: Union[pd.Series, np.ndarray, list]) -> in
 
 
 def find_seasonal_integration_order(
-    timeseries: Union[pd.Series, np.ndarray, list], s=0
+    timeseries: Union[pd.Series, np.ndarray, list], seasonal_order: int = 0
 ) -> int:
     """Finds the integration order (denoted by d) of the timeseries
     Args:
         timeseries: Timeseries for which you wish to find the integration order
-        s: Seasonal Order. E.g. for monthly it os 12.
+        seasonal_order: Seasonal Order E.g. for monthly it is 12.
 
     Returns:
         Seasonal Integration order as integer
@@ -44,7 +44,7 @@ def find_seasonal_integration_order(
         return (
             d
             if adf_stationary_test(ts)
-            else integration_finder(np.diff(ts, n=s), d + 1)
+            else integration_finder(np.diff(ts, n=seasonal_order), d + 1)
         )
 
     return integration_finder(timeseries)
