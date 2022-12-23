@@ -2,10 +2,12 @@ import os
 from typing import Optional
 from configparser import ConfigParser
 from datetime import date
+from io import BytesIO
 
 from azure.identity import DefaultAzureCredential, ClientSecretCredential
 from azure.storage.blob import BlobServiceClient
 from pyspark.sql import SparkSession, DataFrame
+import pandas as pd
 
 
 def is_running_in_databricks() -> bool:
@@ -306,6 +308,33 @@ def load_latest_blob_to_pyspark(
     return spark.read.parquet(parquet_path)
 
 
+def get_blob_storage_root_path(
+    blob_container_name: Optional[str] = None,
+    blob_account_name: Optional[str] = None,
+):
+    """Return a blob storage root path with given details.
+
+    Args:
+        blob_container_name (Optional[str], optional): _description_. Defaults to None.
+        blob_account_name (Optional[str], optional): _description_. Defaults to None.
+
+    Returns:
+        str: A string that represent the root uri of a blob storage container
+    """
+    if not blob_account_name:
+        blob_account_name = get_default_blob_account_name()
+
+    if not blob_container_name:
+        blob_container_name = get_default_blob_container_name()
+
+    if is_running_in_databricks():
+        return f"abfss://{blob_container_name}@{blob_account_name}.dfs.core.windows.net"
+    else:
+        return (
+            f"wasbs://{blob_container_name}@{blob_account_name}.blob.core.windows.net"
+        )
+
+
 def make_blob_storage_path(
     table_name: str,
     blob_container_name: Optional[str] = None,
@@ -316,7 +345,7 @@ def make_blob_storage_path(
     "Customers/year=2022/month=11/day=28/Customers.parquet"
 
     Args:
-        table_name (str):
+        table_name (str): The name of table.
         blob_container_name (Optional[str], optional): _description_. Defaults to None.
         blob_account_name (Optional[str], optional): _description_. Defaults to None.
 
@@ -325,16 +354,10 @@ def make_blob_storage_path(
     """
     today = date.today()
 
-    if not blob_account_name:
-        blob_account_name = get_default_blob_account_name()
-
-    if not blob_container_name:
-        blob_container_name = get_default_blob_container_name()
-
-    if is_running_in_databricks():
-        return f"abfss://{blob_container_name}@{blob_account_name}.dfs.core.windows.net/{table_name}/year={today.year}/month={today.month}/day={today.day}/{table_name}.parquet"
-    else:
-        return f"wasbs://{blob_container_name}@{blob_account_name}.blob.core.windows.net/{table_name}/year={today.year}/month={today.month}/day={today.day}/{table_name}.parquet"
+    blob_storage_root_path = get_blob_storage_root_path(
+        blob_account_name=blob_account_name, blob_container_name=blob_container_name
+    )
+    return f"{blob_storage_root_path}/{table_name}/year={today.year}/month={today.month}/day={today.day}/{table_name}.parquet"
 
 
 def save_dataframe_to_blob(
@@ -351,3 +374,29 @@ def save_dataframe_to_blob(
         df.write.parquet(blob_storage_path, mode="overwrite")
     else:
         df.write.parquet(blob_storage_path)
+
+
+def save_pandas_dataframe_to_blob(
+    pandas_df: pd.DataFrame,
+    filename: str,
+):
+    """Save a pyspark dataframe to blob storage in parquet format"""
+
+    if is_running_in_databricks():
+        blob_storage_root_path = get_blob_storage_root_path()
+        full_path = f"{blob_storage_root_path}/{filename}"
+
+        dbutils = get_dbutils()
+        dbutils.fs.mkdirs(f"dbfs:/FileStore/{os.path.dirname(filename)}")
+
+        pandas_df.to_csv(f"/dbfs/FileStore/{filename}")
+
+        dbutils.fs.mv(f"dbfs:/FileStore/{filename}", full_path)
+
+    else:
+        container_client = get_blob_container_client()
+        file_buffer = BytesIO()
+        pandas_df.to_csv(file_buffer, index=False)
+        file_buffer.seek(0)
+
+        container_client.upload_blob(name=filename, data=file_buffer)
