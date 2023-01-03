@@ -20,6 +20,7 @@ jupyter = "^1.0.0"
 black = "^22.10.0"
 pylint = "^2.15.7"
 prophet = "^1.1.1"
+pre-commit = "^2.20.0"
 pytest = "^7.2.0"
 
 [tool.poetry.dev-dependencies]

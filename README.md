@@ -52,10 +52,12 @@ from you local IDE. Below are the steps of how to run it on you local machine.
 Below are the steps for configuring project on your local machine:
 
 1. Checkout the project from the git repo.
-2. Make a copy of the "file config.ini.template" and rename it to "config.ini".
-3. Edit the file "config.ini" and add required details like username and password. **_Never checkin this file in git as
+2. Run `poetry install` to install all required packages
+3. Run `poetry run pre-commit install` to ensure that formatting takes place locally on every commit
+4. Make a copy of the "file config.ini.template" and rename it to "config.ini".
+5. Edit the file "config.ini" and add required details like username and password. **_Never checkin this file in git as
    this is a public repo_**.
-4. Create a folder called "logs" at the root of the application that will contain the application logs. Alternatively
+6. Create a folder called "logs" at the root of the application that will contain the application logs. Alternatively
    you can edit the "logging.conf" file and edit the line:
 
    _args=("logs/app.log", 5242880, 3)_.
