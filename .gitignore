@@ -133,4 +133,3 @@ dmypy.json
 
 # jupyter notebook
 *.ipynb
-!demo_model_comparison_with_SARIMA.ipynb
