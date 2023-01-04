@@ -25,7 +25,7 @@ logger = get_logger()
 
 
 def main():
-    """ An example workflow that can be run on local machine or databricks.
+    """An example workflow that can be run on local machine or databricks.
 
     It will execute the following tasks:
     1. Fetch latest spend data from Azure blob storage
@@ -38,14 +38,18 @@ def main():
     model_suggestions = compare_models_performance(input_df, models=models)
 
     today = datetime.date.today()
-    next_month = today.replace(month = today.month + 1, day = 1) if today.month < 12 else today.replace(year = today.year + 1, month = 1, day = 1)
+    next_month = (
+        today.replace(month=today.month + 1, day=1)
+        if today.month < 12
+        else today.replace(year=today.year + 1, month=1, day=1)
+    )
 
     forecast_df = run_forecast_with_suggested_models(
         input_df=input_df,
         model_suggestions=model_suggestions,
         models=models,
         months_to_forecast=12,
-        start_month=next_month
+        start_month=next_month,
     )
     output_forecast_to_blob(forecast_df=forecast_df)
 
@@ -90,11 +94,11 @@ def fetch_data_from_blob() -> pd.DataFrame:
 
 
 def model_choices() -> list[ForecastModel]:
-    """ Instantiate the forecast models to use.
+    """Instantiate the forecast models to use.
 
     Returns: A list of ForecastModel object, each one represent a different type of forecast model.
     """
-    
+
     logger.debug("Instantiating models...")
 
     sarima = SarimaModel(search_hyperparameters=True)
@@ -111,7 +115,7 @@ def model_choices() -> list[ForecastModel]:
 def compare_models_performance(
     input_df: pd.DataFrame, models: list[ForecastModel]
 ) -> pd.DataFrame:
-    """ Test train each model with 90% of spend data and compare their accuracy with the rest 10% data. 
+    """Test train each model with 90% of spend data and compare their accuracy with the rest 10% data.
         Will output the result in a table format.
 
     Args:
@@ -144,7 +148,7 @@ def run_forecast_with_suggested_models(
     months_to_forecast: int,
     start_month: datetime.date,
 ) -> pd.DataFrame:
-    """ Generate forecast for a future period with the better performed models for each combination.
+    """Generate forecast for a future period with the better performed models for each combination.
 
     Args:
         input_df (pd.DataFrame): A dataframe of prepared spend data.
@@ -185,8 +189,7 @@ def run_forecast_with_suggested_models(
 
 
 def output_forecast_to_blob(forecast_df: pd.DataFrame):
-    """ Save the forecast data to blob storage.
-    """
+    """Save the forecast data to blob storage."""
 
     logger.debug("Saving forecast to blob storage...")
 
