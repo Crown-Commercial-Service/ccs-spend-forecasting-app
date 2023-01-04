@@ -1,4 +1,5 @@
 import logging, logging.config
+import os
 from configparser import ConfigParser
 
 from sqlalchemy import create_engine
@@ -13,6 +14,7 @@ def get_logger() -> logging.Logger:
         logger
 
     """
+    os.makedirs("logs", exist_ok=True)
 
     config_file_location = (
         "/dbfs/logging.conf" if is_running_in_databricks() else "logging.conf"
@@ -20,6 +22,7 @@ def get_logger() -> logging.Logger:
 
     logging.config.fileConfig(config_file_location)
     logger = logging.getLogger("ccsForecast")
+
     return logger
 
 
