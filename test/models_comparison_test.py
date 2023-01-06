@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from random import random
 from unittest import TestCase
+from unittest.mock import Mock
 
 from pipeline.jobs.mock_forecast import create_mock_model
 from pipeline.jobs.models_comparison import (
@@ -265,3 +266,34 @@ class ModelComparisonTest(TestCase):
             "Model A",
             "Model B",
         ]
+
+    def test_handle_exception_from_model_class(self):
+        """Test for handling exception raised by model when generating forecast"""
+        input_df = pd.DataFrame(
+            # fmt: off
+            data={
+                'SpendMonth': [datetime.date(2022, month, 1) for month in range(1, 11)],
+                'Category': ['Test Category'] * 10,
+                'MarketSector': ['Health'] * 10,
+                'EvidencedSpend': [1000.0, 1200.0, 800.0, 1000.0, 1200.0, 800.0, 1000.0, 1200.0, 800.0, 1000.0]
+            }
+        )
+
+        models = [
+            create_mock_model(name="Model A", randomness=0.8),
+            create_mock_model(name="Model B", randomness=0.05),
+        ]
+
+        # substitute model A's create forecast for a mock which raise error
+        mock_method = Mock(side_effect=ValueError("Mock error for test"))
+        models[0].create_forecast = mock_method
+
+        output = create_models_comparison(
+            input_df=input_df, train_ratio=0.9, models=models
+        )
+
+        # Assert Model A's forecast to be with filled with N/A
+        expected = True
+        actual = output["Model A Forecast"].isnull().all()
+
+        assert expected == actual

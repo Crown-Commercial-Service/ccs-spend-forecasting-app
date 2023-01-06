@@ -28,3 +28,5 @@ jobs:
           databricks configure --aad-token --host ${{ secrets.DATABRICKS_HOSTNAME }}
           dbfs rm --recursive dbfs:/pipeline
           dbfs cp pipeline --recursive dbfs:/pipeline
+          dbfs cp utils.py dbfs:/utils.py --overwrite
+          dbfs cp logging.conf dbfs:/logging.conf --overwrite

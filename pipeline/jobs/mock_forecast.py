@@ -83,8 +83,11 @@ class MockForecastModel(ForecastModel):
         date_range = pd.DataFrame(
             data=pd.date_range(
                 start=start_month, periods=months_to_forecast, freq="MS"
-            ).date,
+            ),
             columns=[self.date_column],
+        )
+        date_range[self.date_column] = date_range[self.date_column].transform(
+            lambda datetime: datetime.date()
         )
 
         output_df = mean_values.merge(date_range, how="cross")
