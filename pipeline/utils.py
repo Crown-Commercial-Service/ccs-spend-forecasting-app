@@ -170,6 +170,7 @@ def create_spark_session_for_local() -> SparkSession:
         .config("spark.sql.execution.arrow.pyspark.fallback.enabled", "true")
         .config("spark.sql.execution.arrow.maxRecordsPerBatch", "10000")
         .config("spark.sql.execution.arrow.pyspark.selfDestruct.enabled", "true")
+        .config("spark.driver.maxResultSize", "2048M")
         .config("spark.sql.shuffle.partitions", "7")
         .config("spark.driver.memory", "12g")
         .master("local[*]")
