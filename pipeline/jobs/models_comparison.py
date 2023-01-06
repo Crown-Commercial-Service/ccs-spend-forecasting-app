@@ -6,6 +6,9 @@ from sklearn.metrics import (
 )
 
 from pipeline.jobs.forecast_model import ForecastModel
+from utils import get_logger
+
+logger = get_logger()
 
 
 def safe_mean_absolute_percentage_error(y_true: pd.Series, y_pred: pd.Series, **kwargs):
@@ -123,11 +126,21 @@ def fill_in_model_forecast(
     columns_to_consider = model.columns_to_consider
     date_column = model.date_column
 
-    forecast = model.create_forecast(
-        input_df=df_for_training,
-        months_to_forecast=months_to_forecast,
-        start_month=start_month,
-    ).rename(columns={"ForecastSpend": column_name_for_forecast(model_name)})
+    try:
+        forecast = model.create_forecast(
+            input_df=df_for_training,
+            months_to_forecast=months_to_forecast,
+            start_month=start_month,
+        ).rename(columns={"ForecastSpend": column_name_for_forecast(model_name)})
+    except Exception as err:
+        # If the model raise exception, log the error, fill the forecast column with NaN and return.
+        logger.error(f"Exception raised when trying to create forecast {err}")
+        logger.error(f"Model name: {model.name}")
+
+        return comparison_table.assign(**{column_name_for_forecast(model_name): np.NaN})
+
+    if model.amount_column in forecast.columns:
+        forecast.drop(columns=model.amount_column, inplace=True)
 
     return comparison_table.merge(
         right=forecast, on=[*columns_to_consider, date_column], how="inner"
@@ -140,6 +153,7 @@ def fill_in_model_accuracy(
     """Fill in the accuracy for each model to comparison table
     This function is meant to be called from create_models_comparison.
     """
+
     model_name = model.name
     forecast_column_name = column_name_for_forecast(model_name)
     columns_to_consider = model.columns_to_consider
@@ -150,7 +164,6 @@ def fill_in_model_accuracy(
         comparison_table[forecast_column_name] - comparison_table[amount_column]
     ).abs() / comparison_table[amount_column]
 
-    # Calculate MAPE Mean Absolute Percentage Error
     mape_by_combinations = (
         comparison_table.groupby(columns_to_consider)[
             [amount_column, forecast_column_name]
