@@ -47,3 +47,20 @@ class ForecastModel(ABC):
             pd.DataFrame: A pandas dataframe that contains spend forecast data.
         """
         raise NotImplementedError
+
+
+    def prepare_input_data(self, input_df: pd.DataFrame) -> pd.DataFrame:
+        """ Helper method for preparing the input data before use.
+        Sum up the spends by month, so that for each combination, there is only one row for one month.
+        Also strips away any irrelavant columns from input data
+
+        Args:
+            input_df (pd.DataFrame): Input spend data
+
+        Returns:
+            pd.DataFrame: Prepared data
+        """
+
+        return input_df.groupby(
+            [self.date_column, *self.columns_to_consider], as_index=False
+        ).agg({self.amount_column: "sum"})
