@@ -125,7 +125,7 @@ The output is stored on blob storage in folder  `SpendDataFilledMissingMonth`.
 
 ##### To run this job on a local machine:
 ```shell
-python -m pipeline.main
+poetry run python -m pipeline.main
 ```
 
 ##### To run this job from Azure:
@@ -149,7 +149,7 @@ The output is stored on blob storage in folder `ForecastOutput`.
 
 ##### To run this job on a local machine:
 ```shell
-python -m pipeline.jobs.run_forecast_and_output_to_blob
+poetry run python -m pipeline.jobs.run_forecast_and_output_to_blob
 ```
 
 ##### To run this job from Azure:
@@ -173,7 +173,7 @@ The output is stored on blob storage in folder `ActiveCombinations`.
 
 ##### To run this job on a local machine:
 ```shell
-python -m pipeline.jobs.get_active_combinations
+poetry run python -m pipeline.jobs.get_active_combinations
 ```
 
 ##### To run this job from Azure:
