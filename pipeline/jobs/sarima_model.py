@@ -162,22 +162,6 @@ class SarimaModel(ForecastModel):
 
         return output_df
 
-    def prepare_input_data(self, input_df: pd.DataFrame) -> pd.DataFrame:
-        """Sum up the spend data by month, so that for each combination, there is only one row for one month.
-        Also strips away any irrelavant columns from input data
-
-        Args:
-            input_df (pd.DataFrame): Input spend data
-
-        Returns:
-            pd.DataFrame: Prepared data
-        """
-
-        #
-        return input_df.groupby(
-            [self.date_column, *self.columns_to_consider], as_index=False
-        ).agg({self.amount_column: "sum"})
-
     def sarima_aic_scores(
         self,
         timeseries: Union[pd.Series, np.ndarray, list],
