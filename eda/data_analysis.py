@@ -1,4 +1,8 @@
 import argparse
+import glob
+import os
+import shutil
+from datetime import date
 from itertools import product
 from typing import Union, Tuple
 
@@ -6,6 +10,7 @@ import warnings
 
 import numpy as np
 import pandas as pd
+from dateutil.relativedelta import relativedelta
 from matplotlib import pyplot as plt
 from matplotlib.dates import date2num
 from pandas.errors import SettingWithCopyWarning
@@ -23,6 +28,7 @@ from utils import get_logger, get_database_connection
 pd.set_option("display.max_rows", 0)
 pd.set_option("display.max_columns", 0)
 pd.set_option("expand_frame_repr", False)
+pd.set_option("display.max_rows", None)
 
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -30,20 +36,28 @@ warnings.filterwarnings("ignore", category=ConvergenceWarning)
 warnings.filterwarnings("ignore", category=SettingWithCopyWarning)
 
 logger = get_logger()
+local_category_sector_path = os.path.join("eda", "category_sector.csv")
 
 
-def get_data_for_analysis(local_data_path: str = None) -> pd.DataFrame:
+def get_data_for_analysis(local_data_path: str = None, category: str = None, sector: str = None) -> pd.DataFrame:
     """Get the data from local machine if local_data_path is set or else will try to fetch from the database.
     Note: Fetching data from database is expensive and local stored data should be in parquet format.
 
     Args:
         local_data_path: Path of the data folder storing data in parquet format.
+        category: Category for which spend data should be fetched
+        sector: Market sector for which spend data should be fetched
 
     Returns:
         Returns the DataFrame
 
     """
-    sql = """
+    sql_filter_condition = " "
+    if category:
+        sql_filter_condition = sql_filter_condition + f"AND spend.Category = '{category}' "
+    if sector:
+        sql_filter_condition = sql_filter_condition + f"AND MarketSector = '{sector}' "
+    sql = f"""
         SELECT
         DATEADD(month,3,CONVERT(date,CONCAT(spend.FYMonthKey,'01'),112)) as SpendMonth,
         spend.CustomerURN,
@@ -72,22 +86,32 @@ def get_data_for_analysis(local_data_path: str = None) -> pd.DataFrame:
         FROM dbo.SpendAggregated AS spend
         INNER JOIN dbo.FrameworkCategoryPillar frame ON spend.FrameworkNumber = frame.FrameworkNumber
         LEFT JOIN dbo.Customers cust ON spend.CustomerURN = cust.CustomerKey
-        WHERE frame.STATUS IN ('Live', 'Expired - Data Still Received')
+        WHERE DATEADD(month,3,CONVERT(date,CONCAT(spend.FYMonthKey,'01'),112)) < DATEADD(month, -2, GETDATE())  
+        {sql_filter_condition}
         ORDER BY spend.Category, cust.MarketSector, spend.FYMonthKey
     """
 
     if local_data_path:
         logger.debug(f"As local_data_path is set, so using local dataset.")
         df = pd.read_parquet(local_data_path)
+        if category and sector:
+            df = df[(df["Category"] == category) & (df["MarketSector"] == sector)]
+        elif category:
+            df = df[df["Category"] == category]
+        elif sector:
+            df = df[df["MarketSector"] == sector]
+
+        df.reset_index(drop=True, inplace=True)
     else:
         with get_database_connection() as con:
             logger.debug("As local_data_path is not set so reading from database, this can take a while.")
             df = pd.read_sql(sql, con)
 
+    df["SpendMonth"] = pd.to_datetime(df["SpendMonth"])
     return df
 
 
-def prepare_data(df: pd.DataFrame) -> pd.DataFrame:
+def aggregate_spend(df: pd.DataFrame) -> pd.DataFrame:
     """Prepares the data for the analysis and to be used for training the model. It aggregates the data by month,
     category and market sector.
 
@@ -99,6 +123,81 @@ def prepare_data(df: pd.DataFrame) -> pd.DataFrame:
 
     """
     return df.groupby(["SpendMonth", "Category", "MarketSector"], as_index=False).agg({"EvidencedSpend": "sum"})
+
+
+def prepare_data(df: pd.DataFrame, category: str, sector: str) -> pd.DataFrame:
+    """
+    Generate a correct data range and index for the Dataframe to be used for training.
+    Args:
+        df: Input DataFrame
+        category: Category for which spend data should be fetched
+        sector: Market sector for which spend data should be fetched
+
+    Returns:
+        Generate the correct date range to be used to train models.
+
+    """
+    category_sector_spend = df[(df["Category"] == category) & (df["MarketSector"] == sector)].reset_index(drop=True)
+    category_sector_spend.set_index("SpendMonth", inplace=True, drop=False)
+    # complete_data = pd.DataFrame(data=pd.date_range(start=category_sector_spend["SpendMonth"].min(axis=0),
+    #                                                 end=category_sector_spend["SpendMonth"].max(axis=0), freq="MS"),
+    #                              columns=["SpendMonth"])
+    end_date = max([category_sector_spend["SpendMonth"].max(axis=0), date.today() - relativedelta(months=2)])
+    complete_data = pd.DataFrame(data=pd.date_range(start=category_sector_spend["SpendMonth"].min(axis=0),
+                                                    end=end_date, freq="MS"), columns=["SpendMonth"])
+    complete_data["Category"] = category
+    complete_data["MarketSector"] = sector
+    complete_data["EvidencedSpend"] = 0.0
+    complete_data.set_index("SpendMonth", inplace=True, drop=False)
+    complete_data.update(category_sector_spend)
+    complete_data.reset_index(drop=True, inplace=True)
+    return complete_data
+
+
+def get_all_category_sector(latest: bool = False) -> list[Tuple[str, str]]:
+    category_sector_list = []
+    if not os.path.exists(local_category_sector_path):
+        latest = True
+    else:
+        df = pd.read_csv(local_category_sector_path)
+        category_sector_list = list(df.itertuples(index=False, name=None))
+
+    if latest:
+        sql = """
+            SELECT
+            COUNT (a.SpendMonth) AS RecordCount,a.Category,a.MarketSector
+            FROM
+            (
+               SELECT
+               DATEADD(month,3,CONVERT(date,CONCAT(spend.FYMonthKey,'01'),112)) as SpendMonth,
+               spend.Category,
+               ISNULL(cust.MarketSector,'Unassigned') AS MarketSector
+               FROM dbo.SpendAggregated AS spend
+               INNER JOIN dbo.FrameworkCategoryPillar frame ON spend.FrameworkNumber = frame.FrameworkNumber
+               LEFT JOIN dbo.Customers cust ON spend.CustomerURN = cust.CustomerKey
+               WHERE frame.STATUS IN ('Live', 'Expired - Data Still Received') AND DATEADD
+               (
+                  month,
+                  3,
+                  CONVERT(date,CONCAT(spend.FYMonthKey,'01'),112)
+               )
+               < DATEADD(month,-2,GETDATE())
+               GROUP BY spend.Category,
+               cust.MarketSector,
+               spend.FYMonthKey
+            )
+            AS a
+            GROUP BY a.Category,a.MarketSector
+            ORDER BY RecordCount DESC,a.Category,a.MarketSector
+            """
+        with get_database_connection() as con:
+            logger.debug("Fetching the latest list of categories and sector from database.")
+            df = pd.read_sql(sql, con)
+            df = df[["Category", "MarketSector"]]
+            df.to_csv(local_category_sector_path, index=False)
+            category_sector_list = list(df.itertuples(index=False, name=None))
+
+    return category_sector_list
 
 
 def get_category_sector(index: int = 0) -> Tuple[str, str]:
@@ -115,118 +214,13 @@ def get_category_sector(index: int = 0) -> Tuple[str, str]:
         Value Error if index is our of range.
 
     """
-    category_sector_list = [("Workforce Health & Education", "Health"),
-                            ("Document Management & Logistics", "Education"),
-                            ("Financial Services", "Local Community and Housing"), ("Financial Services", "Education"),
-                            ("Network Services", "Local Community and Housing"),
-                            ("Document Management & Logistics", "Local Community and Housing"),
-                            ("Network Services", "Health"), ("Fleet", "Health"),
-                            ("Document Management & Logistics", "Health"), ("Network Services", "Education"),
-                            ("Financial Services", "Health"), ("Energy", "Health"),
-                            ("Energy", "Local Community and Housing"), ("Fleet", "Local Community and Housing"),
-                            ("Energy", "Education"), ("Technology Products & Services", "Local Community and Housing"),
-                            ("Digital Future", "Government Policy"),
-                            ("Document Management & Logistics", "Defence and Security"),
-                            ("Technology Solutions & Outcomes", "Local Community and Housing"),
-                            ("Network Services", "Defence and Security"), ("Digital Future", "Health"),
-                            ("Technology Products & Services", "Health"),
-                            ("Technology Products & Services", "Defence and Security"),
-                            ("Digital Future", "Defence and Security"),
-                            ("Digital Future", "Local Community and Housing"), ("Fleet", "Defence and Security"),
-                            ("Document Management & Logistics", "Government Policy"), ("Construction", "Education"),
-                            ("Network Services", "Government Policy"), ("Construction", "Local Community and Housing"),
-                            ("Financial Services", "Defence and Security"),
-                            ("Technology Products & Services", "Education"), ("People Services", "Government Policy"),
-                            ("Energy", "Defence and Security"), ("Travel", "Health"),
-                            ("Construction", "Defence and Security"),
-                            ("Technology Products & Services", "Government Policy"),
-                            ("Workforce Health & Education", "Education"), ("Energy", "Government Policy"),
-                            ("Travel", "Government Policy"), ("Workplace", "Health"),
-                            ("Technology Solutions & Outcomes", "Health"),
-                            ("Professional Services", "Government Policy"), ("Financial Services", "Government Policy"),
-                            ("Digital Future", "Education"), ("Workplace", "Defence and Security"),
-                            ("Digital Future", "Infrastructure"), ("People Services", "Defence and Security"),
-                            ("Fleet", "Government Policy"), ("Workforce Health & Education", "Government Policy"),
-                            ("Professional Services", "Health"), ("Travel", "Local Community and Housing"),
-                            ("Construction", "Health"), ("PSR & Permanent Recruitment", "Defence and Security"),
-                            ("Fleet", "Education"), ("Network Services", "Infrastructure"),
-                            ("Document Management & Logistics", "Culture, Media and Sport"),
-                            ("Travel", "Defence and Security"), ("People Services", "Health"),
-                            ("Document Management & Logistics", "Infrastructure"),
-                            ("Financial Services", "Infrastructure"),
-                            ("Professional Services", "Local Community and Housing"),
-                            ("Document Management & Logistics", "Unassigned"),
-                            ("Financial Services", "Culture, Media and Sport"),
-                            ("Network Services", "Culture, Media and Sport"),
-                            ("People Services", "Local Community and Housing"), ("Energy", "Infrastructure"),
-                            ("Technology Products & Services", "Infrastructure"),
-                            ("Marcomms & Research", "Government Policy"), ("Workplace", "Local Community and Housing"),
-                            ("Energy", "Culture, Media and Sport"), ("Fleet", "Infrastructure"),
-                            ("Workforce Health & Education", "Defence and Security"),
-                            ("Network Services", "Unassigned"), ("Professional Services", "Defence and Security"),
-                            ("Technology Solutions & Outcomes", "Defence and Security"),
-                            ("Professional Services", "Infrastructure"),
-                            ("Technology Solutions & Outcomes", "Government Policy"),
-                            ("Construction", "Government Policy"), ("Workplace", "Government Policy"),
-                            ("PSR & Permanent Recruitment", "Government Policy"),
-                            ("Workforce Health & Education", "Local Community and Housing"),
-                            ("Workforce Health & Education", "Unassigned"), ("Travel", "Education"),
-                            ("Energy", "Unassigned"), ("Travel", "Infrastructure"),
-                            ("Financial Services", "Unassigned"),
-                            ("Technology Products & Services", "Culture, Media and Sport"),
-                            ("Digital Future", "Culture, Media and Sport"), ("Workplace", "Education"),
-                            ("Professional Services", "Education"), ("People Services", "Infrastructure"),
-                            ("People Services", "Education"), ("Travel", "Culture, Media and Sport"),
-                            ("Workplace", "Infrastructure"), ("Construction", "Infrastructure"),
-                            ("Technology Solutions & Outcomes", "Education"), ("PSR & Permanent Recruitment", "Health"),
-                            ("Fleet", "Unassigned"), ("Marcomms & Research", "Defence and Security"),
-                            ("Technology Solutions & Outcomes", "Infrastructure"),
-                            ("Fleet", "Culture, Media and Sport"), ("Marcomms & Research", "Health"),
-                            ("Marcomms & Research", "Infrastructure"), ("Technology Products & Services", "Unassigned"),
-                            ("People Services", "Culture, Media and Sport"),
-                            ("Technology Solutions & Outcomes", "Culture, Media and Sport"),
-                            ("Workforce Health & Education", "Infrastructure"), ("Marcomms & Research", "Education"),
-                            ("Construction", "Unassigned"), ("Professional Services", "Culture, Media and Sport"),
-                            ("Workforce Health & Education", "Culture, Media and Sport"),
-                            ("PSR & Permanent Recruitment", "Infrastructure"),
-                            ("Marcomms & Research", "Culture, Media and Sport"),
-                            ("Marcomms & Research", "Local Community and Housing"),
-                            ("Construction", "Culture, Media and Sport"), ("Workplace", "Culture, Media and Sport"),
-                            ("Digital Future", "Unassigned"),
-                            ("PSR & Permanent Recruitment", "Local Community and Housing"), ("Travel", "Unassigned"),
-                            ("PSR & Permanent Recruitment", "Education"),
-                            ("PSR & Permanent Recruitment", "Culture, Media and Sport"), ("Workplace", "Unassigned"),
-                            ("Contact Centres", "Government Policy"), ("Technology Solutions & Outcomes", "Unassigned"),
-                            ("People Services", "Unassigned"), ("Contact Centres", "Defence and Security"),
-                            ("Professional Services", "Unassigned"), ("Marcomms & Research", "Unassigned"),
-                            ("Contact Centres", "Health"), ("Financial Planning & Estates", "Government Policy"),
-                            ("Contact Centres", "Education"),
-                            ("PSR & Permanent Recruitment", "Unassigned"),
-                            ("Commodities and Innovation", "Government Policy"),
-                            ("Contact Centres", "Infrastructure"),
 
-                            # Below 4 have just 67 records
-                            ("Financial Planning & Estates", "Defence and Security"),
-                            ("Financial Planning & Estates", "Culture, Media and Sport"),
-                            ("Financial Planning & Estates", "Education"),
-                            ("Financial Planning & Estates", "Local Community and Housing"),
-                            # Data is too less for the below, so we are not using it.
-                            # ("Contact Centres", "Local Community and Housing"),
-                            # ("Contact Centres", "Unassigned"),
-                            # ("Contact Centres", "Culture, Media and Sport"),
-                            # ("Managed Service", "Defence and Security"),
-                            # ("Financial Planning & Estates", "Unassigned"),
-                            # ("Below Threshold", "Health"),
-                            # ("Managed Service", "Government Policy"),
-                            # ("Managed Service", "Unassigned"),
-                            # ("Managed Service", "Infrastructure"),
-                            # ("Managed Service", "Education"),
-                            # ("Below Threshold", "Defence and Security"),
-                            # ("Below Threshold", "Local Community and Housing"),
-                            # ("Below Threshold", "Government Policy"),
-                            # ("Below Threshold", "Education"),
-                            # ("Below Threshold", "Culture, Media and Sport")
-                            ]
+    if not os.path.exists(local_category_sector_path):
+        get_all_category_sector(latest=True)
+
+    df = pd.read_csv(local_category_sector_path)
+    category_sector_list = list(df.itertuples(index=False, name=None))
+
     if index < 0 or index > len(category_sector_list):
         raise ValueError("Index or of range")
     return category_sector_list[index]
@@ -245,7 +239,7 @@ def visualize_raw_data(df: pd.DataFrame, category: str, sector: str, run: bool =
 
     """
     if run:
-        category_sector_spend = df[(df["Category"] == category) & (df["MarketSector"] == sector)].reset_index(drop=True)
+        category_sector_spend = prepare_data(df=df, category=category, sector=sector)
         spend = category_sector_spend["EvidencedSpend"]
         labels = pd.date_range(start=category_sector_spend["SpendMonth"].min(axis=0),
                                end=category_sector_spend["SpendMonth"].max(axis=0),
@@ -296,7 +290,7 @@ def is_spend_random_walk(df: pd.DataFrame, category: str, sector: str, run: bool
 
     """
     if run:
-        category_sector_spend = df[(df["Category"] == category) & (df["MarketSector"] == sector)].reset_index(drop=True)
+        category_sector_spend = prepare_data(df=df, category=category, sector=sector)
         spend = category_sector_spend["EvidencedSpend"]
         labels = pd.date_range(start=category_sector_spend["SpendMonth"].min(axis=0),
                                end=category_sector_spend["SpendMonth"].max(axis=0),
@@ -511,7 +505,7 @@ def model_arma(df: pd.DataFrame, category: str, sector: str, run: bool = False):
     """
 
     if run:
-        category_sector_spend = df[(df["Category"] == category) & (df["MarketSector"] == sector)].reset_index(drop=True)
+        category_sector_spend = prepare_data(df=df, category=category, sector=sector)
         spend = category_sector_spend["EvidencedSpend"]
         labels = pd.date_range(start=category_sector_spend["SpendMonth"].min(axis=0),
                                end=category_sector_spend["SpendMonth"].max(axis=0),
@@ -592,7 +586,7 @@ def model_arma(df: pd.DataFrame, category: str, sector: str, run: bool = False):
             qs = range(0, 4, 1)  # Possible value of order q of MA(q)
 
             aic_scores = get_aic_scores(train["diff"], ps=ps, qs=qs)
-            logger.debug(f"AIC scores are:\n{aic_scores.head(len(ps) * len(qs))}")
+            logger.debug(f"AIC scores are:\n{aic_scores}")
             lowest_aic_score = aic_scores.iloc[0]
             best_p = int(lowest_aic_score["p"])
             best_q = int(lowest_aic_score["q"])
@@ -703,7 +697,7 @@ def model_arma(df: pd.DataFrame, category: str, sector: str, run: bool = False):
             logger.debug(f"Mean Absolute Percentage Error of ARMA on original data: {mape_arma:.2f}")
 
             fig, ax = plt.subplots()
-            x = ["Mean", "Last Month", f"ARIMA({best_p},{d},{best_q})"]
+            x = ["Mean", "Last Month", f"ARMA({best_p},{best_q})"]
             y = [mape_mean, mape_last, mape_arma]
             ax.bar(x, y, width=0.4)
             ax.set_xlabel("Models")
@@ -715,7 +709,7 @@ def model_arma(df: pd.DataFrame, category: str, sector: str, run: bool = False):
             plt.show()
 
             fig, ax = plt.subplots()
-            x = ["Mean", "Last Month", f"ARIMA({best_p},{d},{best_q})"]
+            x = ["Mean", "Last Month", f"ARMA({best_p},{best_q})"]
             y = [mae_mean / 1e6, mae_last_value / 1e6, mae_arma / 1e6]
             ax.bar(x, y, width=0.4)
             ax.set_xlabel("Models")
@@ -741,7 +735,7 @@ def model_arima(df: pd.DataFrame, category: str, sector: str, run: bool = False)
 
     """
     if run:
-        category_sector_spend = df[(df["Category"] == category) & (df["MarketSector"] == sector)].reset_index(drop=True)
+        category_sector_spend = prepare_data(df=df, category=category, sector=sector)
         spend = category_sector_spend["EvidencedSpend"]
         labels = pd.date_range(start=category_sector_spend["SpendMonth"].min(axis=0),
                                end=category_sector_spend["SpendMonth"].max(axis=0),
@@ -758,9 +752,6 @@ def model_arima(df: pd.DataFrame, category: str, sector: str, run: bool = False)
         plt.legend()
         plt.show()
 
-        d = find_integration_order(spend)
-        logger.debug(f"Integration order is {d}")
-
         dataset_size = len(category_sector_spend)
         train_ratio = 0.9
         train_size = int(dataset_size * train_ratio)
@@ -768,8 +759,14 @@ def model_arima(df: pd.DataFrame, category: str, sector: str, run: bool = False)
 
         train = category_sector_spend[:train_size]
         test = category_sector_spend[train_size:]
-
         logger.debug(f"Size of dataset is {dataset_size} training set is {train_size} and test size is: {test_size}")
+
+        d = 0
+        try:
+            d = find_integration_order(train["EvidencedSpend"])
+            logger.debug(f"Integration order is {d}")
+        except ValueError as e:
+            logger.error(f"Error while calculating d: {e}")
 
         fig, ax = plt.subplots(figsize=fig_size)
         ax.plot(category_sector_spend["SpendMonth"], spend / 1e6, label=f"{category}:{sector}")
@@ -787,7 +784,7 @@ def model_arima(df: pd.DataFrame, category: str, sector: str, run: bool = False)
         ps = range(0, 4, 1)  # Possible value of order p of AR(p)
         qs = range(0, 4, 1)  # Possible value of order q of MA(q)
         aic_scores = get_aic_scores(train["EvidencedSpend"], ps=ps, qs=qs, d=d)
-        logger.debug(f"AIC scores are:\n{aic_scores.head(len(ps) * len(qs))}")
+        logger.debug(f"AIC scores are:\n{aic_scores}")
         lowest_aic_score = aic_scores.iloc[0]
         best_p = int(lowest_aic_score["p"])
         best_q = int(lowest_aic_score["q"])
@@ -804,10 +801,9 @@ def model_arima(df: pd.DataFrame, category: str, sector: str, run: bool = False)
         is_residual_white_noise = ljung_box_residual_test(residuals)
         logger.debug(f"Is residual just random error? {is_residual_white_noise}")
 
-        test["last_month"] = category_sector_spend["EvidencedSpend"].iloc[train_size - 1:dataset_size - 1].values
-        pred = model_fit.get_prediction(train_size, dataset_size - 1).predicted_mean
-        test["forecast"] = pred
-        logger.debug(f"Prediction on test\n{test.head(test_size)}")
+        test["last_month"] = category_sector_spend["EvidencedSpend"].iloc[test.index.min() - 1:test.index.max()].values
+        test["forecast"] = model_fit.get_prediction(test.index.min(), test.index.max()).predicted_mean
+        logger.debug(f"Prediction on test\n{test}")
 
         fig, ax = plt.subplots(figsize=fig_size)
         ax.plot(category_sector_spend["SpendMonth"], spend / 1e6, label=f"{category}:{sector}")
@@ -877,7 +873,7 @@ def model_sarima(df: pd.DataFrame, category: str, sector: str, run: bool = False
     """
 
     if run:
-        category_sector_spend = df[(df["Category"] == category) & (df["MarketSector"] == sector)].reset_index(drop=True)
+        category_sector_spend = prepare_data(df=df, category=category, sector=sector)
         logger.debug(f"Dataset size is: {category_sector_spend.shape[0]}")
         spend = category_sector_spend["EvidencedSpend"]
         labels = pd.date_range(start=category_sector_spend["SpendMonth"].min(axis=0),
@@ -895,9 +891,6 @@ def model_sarima(df: pd.DataFrame, category: str, sector: str, run: bool = False
         plt.legend()
         plt.show()
 
-        d = find_integration_order(spend)
-        logger.debug(f"Integration order is {d}")
-
         dataset_size = len(category_sector_spend)
         train_ratio = 0.9
         train_size = int(dataset_size * train_ratio)
@@ -907,6 +900,13 @@ def model_sarima(df: pd.DataFrame, category: str, sector: str, run: bool = False
         test = category_sector_spend[train_size:]
 
         logger.debug(f"Size of dataset is {dataset_size} training set is {train_size} and test size is: {test_size}")
+
+        d = 0
+        try:
+            d = find_integration_order(train["EvidencedSpend"])
+            logger.debug(f"Integration order is {d}")
+        except ValueError as e:
+            logger.error(f"Error while calculating d: {e}")
 
         fig, ax = plt.subplots(figsize=fig_size)
         ax.plot(category_sector_spend["SpendMonth"], spend / 1e6, label=f"{category}:{sector}")
@@ -921,35 +921,36 @@ def model_sarima(df: pd.DataFrame, category: str, sector: str, run: bool = False
         plt.tight_layout()
         plt.show()
 
-        test["last_month"] = category_sector_spend["EvidencedSpend"].iloc[train_size - 1:dataset_size - 1].values
+        test["last_month"] = category_sector_spend["EvidencedSpend"].iloc[test.index.min() - 1:test.index.max()].values
 
         ps = range(0, 4, 1)  # Possible value of order p of AR(p)
         qs = range(0, 4, 1)  # Possible value of order q of MA(q)
         Ps = [0]  # Seasonality is 0 for ARIMA
         Qs = [0]  # Seasonality is 0 for ARIMA
         D = 0
-        s = 12  # s is same as m
+        s = 0  # s is same as m
         aic_scores = get_aic_scores(train["EvidencedSpend"], ps=ps, qs=qs, Ps=Ps, Qs=Qs, d=d, D=D, s=s)
-        logger.debug(f"AIC scores are:\n{aic_scores.head(len(ps) * len(qs) * len(Ps) * len(Qs))}")
+        logger.debug(f"AIC scores are:\n{aic_scores}")
         lowest_aic_score = aic_scores.iloc[0]
         best_p = int(lowest_aic_score["p"])
         best_q = int(lowest_aic_score["q"])
         logger.debug(f"ARMIA({best_p},{d},{best_q}) best p is: {best_p} and best q is {best_q}")
 
-        model = SARIMAX(train["EvidencedSpend"], order=(best_p, d, best_q), seasonal_order=(Ps[0], D, Qs[0], s),
-                        simple_differencing=False)
-        model_fit = model.fit(disp=False)
-        logger.debug(f"Model fit summary:\n{model_fit.summary()}")
-        fig = model_fit.plot_diagnostics(figsize=(10, 8))
+        arima_model = SARIMAX(train["EvidencedSpend"], order=(best_p, d, best_q), seasonal_order=(Ps[0], D, Qs[0], s),
+                              simple_differencing=False)
+        arima_model_fit = arima_model.fit(disp=False)
+        logger.debug(f"Model fit summary:\n{arima_model_fit.summary()}")
+        fig = arima_model_fit.plot_diagnostics(figsize=(10, 8))
         fig.suptitle(f"ARMIA({best_p},{d},{best_q}) model diagnostics")
         plt.show()
 
-        residuals = model_fit.resid
+        residuals = arima_model_fit.resid
         is_residual_white_noise = ljung_box_residual_test(residuals)
         logger.debug(f"Is ARMIA({best_p},{d},{best_q}) residual just random error? {is_residual_white_noise}")
-        arima_pred = model_fit.get_prediction(train_size, dataset_size - 1).predicted_mean
-        test["arima_forecast"] = arima_pred
 
+        test["arima_forecast"] = arima_model_fit.get_prediction(test.index.min(), test.index.max()).predicted_mean
+
+        s = 12  # s is same as m
         decomposition = STL(spend / 1e6, period=s).fit()
         fig, (ax1, ax2, ax3, ax4) = plt.subplots(nrows=4, ncols=1, sharex="all", figsize=(10, 8))
         ax1.plot(decomposition.observed)
@@ -965,13 +966,17 @@ def model_sarima(df: pd.DataFrame, category: str, sector: str, run: bool = False
         plt.tight_layout()
         plt.show()
 
-        D = find_seasonal_integration_order(spend, s=s)
+        D = 0
+        try:
+            D = find_seasonal_integration_order(train["EvidencedSpend"], s=s)
+        except ValueError as e:
+            logger.error(f"Error while calculating D: {e}")
         ps = range(0, 4, 1)
         qs = range(0, 4, 1)
         Ps = range(0, 4, 1)
         Qs = range(0, 4, 1)
         aic_scores = get_aic_scores(train["EvidencedSpend"], ps=ps, qs=qs, Ps=Ps, Qs=Qs, d=d, D=D, s=s)
-        logger.debug(f"AIC scores are:\n{aic_scores.head(len(ps) * len(qs) * len(Ps) * len(Qs))}")
+        logger.debug(f"AIC scores are:\n{aic_scores}")
         lowest_aic_score = aic_scores.iloc[0]
         best_p = int(lowest_aic_score["p"])
         best_q = int(lowest_aic_score["q"])
@@ -996,9 +1001,8 @@ def model_sarima(df: pd.DataFrame, category: str, sector: str, run: bool = False
         is_residual_white_noise = ljung_box_residual_test(residuals)
         logger.debug(f"Is SARIMA({best_p},{d},{best_q})({best_P},{D},{best_Q}){s} residual just random error? " +
                      f"{is_residual_white_noise}")
-        sarima_pred = sarima_model_fit.get_prediction(train_size, dataset_size - 1).predicted_mean
-        test["sarima_forecast"] = sarima_pred
-        logger.debug(f"SARIMA({best_p},{d},{best_q})({best_P},{D},{best_Q}){s} prediction are:\n{test.head(test_size)}")
+        test["sarima_forecast"] = sarima_model_fit.get_prediction(test.index.min(), test.index.max()).predicted_mean
+        logger.debug(f"SARIMA({best_p},{d},{best_q})({best_P},{D},{best_Q}){s} prediction are:\n{test}")
 
         fig, ax = plt.subplots(figsize=fig_size)
         ax.plot(category_sector_spend["SpendMonth"], spend / 1e6, label=f"{category}:{sector}")
@@ -1029,7 +1033,7 @@ def model_sarima(df: pd.DataFrame, category: str, sector: str, run: bool = False
         logger.debug(f"SARIMA seasonal mean absolute percentage error: {sarima_mean_absolute_percentage_error:.2f}")
 
         fig, ax = plt.subplots()
-        x = ["Last Month", f"ARIMA({best_p},{d},{best_q})", f"SARIMA({best_p},{d},{best_q})({best_P},{D},{best_Q}){s})"]
+        x = ["Last Month", f"ARIMA({best_p},{d},{best_q})", f"SARIMA({best_p},{d},{best_q})({best_P},{D},{best_Q}){s}"]
         y = [last_month_mean_absolute_percentage_error, arima_mean_absolute_percentage_error,
              sarima_mean_absolute_percentage_error]
         ax.bar(x, y, width=0.4)
@@ -1050,7 +1054,7 @@ def model_sarima(df: pd.DataFrame, category: str, sector: str, run: bool = False
         logger.debug(f"SARIMA seasonal MAE: {sarima_mae:.2f}")
 
         fig, ax = plt.subplots()
-        x = ["Last Month", f"ARIMA({best_p},{d},{best_q})", f"SARIMA({best_p},{d},{best_q})({best_P},{D},{best_Q}){s})"]
+        x = ["Last Month", f"ARIMA({best_p},{d},{best_q})", f"SARIMA({best_p},{d},{best_q})({best_P},{D},{best_Q}){s}"]
         y = [last_month_mae / 1e6, arima_mae / 1e6, sarima_mae / 1e6]
         ax.bar(x, y, width=0.4)
         ax.set_xlabel("Models")
@@ -1076,8 +1080,7 @@ def model_prophet(df: pd.DataFrame, category: str, sector: str, run: bool = Fals
 
         """
     if run:
-        category_sector_spend: pd.DataFrame = df[(df["Category"] == category) & (df["MarketSector"] == sector)] \
-            .reset_index(drop=True)
+        category_sector_spend = prepare_data(df=df, category=category, sector=sector)
         logger.debug(f"Dataset size is: {category_sector_spend.shape[0]}")
         spend = category_sector_spend["EvidencedSpend"]
         labels = pd.date_range(start=category_sector_spend["SpendMonth"].min(axis=0),
@@ -1104,7 +1107,7 @@ def model_prophet(df: pd.DataFrame, category: str, sector: str, run: bool = Fals
 
         train = category_sector_spend[:train_size]
         test = category_sector_spend[train_size:]
-        test["last_month"] = category_sector_spend["EvidencedSpend"].iloc[train_size - 1:dataset_size - 1].values
+        test["last_month"] = category_sector_spend["EvidencedSpend"].iloc[test.index.min() - 1:test.index.max()].values
 
         fig, ax = plt.subplots(figsize=fig_size)
         ax.plot(category_sector_spend["SpendMonth"], spend / 1e6, label=f"{category}:{sector}")
@@ -1119,42 +1122,51 @@ def model_prophet(df: pd.DataFrame, category: str, sector: str, run: bool = Fals
         plt.tight_layout()
         plt.show()
 
-        d = find_integration_order(spend)
-        logger.debug(f"Integration order is {d}")
+        d = 0
+        try:
+            d = find_integration_order(train["EvidencedSpend"])
+            logger.debug(f"Integration order is {d}")
+        except ValueError as e:
+            logger.error(f"Error while calculating d: {e}")
 
         ps = range(0, 4, 1)  # Possible value of order p of AR(p)
         qs = range(0, 4, 1)  # Possible value of order q of MA(q)
         Ps = [0]  # Seasonality is 0 for ARIMA
         Qs = [0]  # Seasonality is 0 for ARIMA
         D = 0
-        s = 12  # s is same as m
+        s = 0  # s is same as m
         aic_scores = get_aic_scores(train["EvidencedSpend"], ps=ps, qs=qs, Ps=Ps, Qs=Qs, d=d, D=D, s=s)
-        logger.debug(f"AIC scores are:\n{aic_scores.head(len(ps) * len(qs) * len(Ps) * len(Qs))}")
+        logger.debug(f"AIC scores are:\n{aic_scores}")
         lowest_aic_score = aic_scores.iloc[0]
         best_p = int(lowest_aic_score["p"])
         best_q = int(lowest_aic_score["q"])
         logger.debug(f"Best p is: {best_p} and best q is {best_q}")
 
-        model = SARIMAX(train["EvidencedSpend"], order=(best_p, d, best_q), seasonal_order=(Ps[0], D, Qs[0], s),
-                        simple_differencing=False)
-        model_fit = model.fit(disp=False)
-        logger.debug(f"Model fir summary:\n{model_fit.summary()}")
-        fig = model_fit.plot_diagnostics(figsize=(10, 8))
+        arima_model = SARIMAX(train["EvidencedSpend"], order=(best_p, d, best_q), seasonal_order=(Ps[0], D, Qs[0], s),
+                              simple_differencing=False)
+        arima_model_fit = arima_model.fit(disp=False)
+        logger.debug(f"Model fir summary:\n{arima_model_fit.summary()}")
+        fig = arima_model_fit.plot_diagnostics(figsize=(10, 8))
         fig.suptitle(f"ARMIA({best_p},{d},{best_q}) model diagnostics")
         plt.show()
 
-        residuals = model_fit.resid
+        residuals = arima_model_fit.resid
         is_residual_white_noise = ljung_box_residual_test(residuals)
         logger.debug(f"Is ARMIA({best_p},{d},{best_q}) residual just random error? {is_residual_white_noise}")
 
-        arima_pred = model_fit.get_prediction(train_size, dataset_size - 1).predicted_mean
-        test["arima_forecast"] = arima_pred
+        test["arima_forecast"] = arima_model_fit.get_prediction(test.index.min(), test.index.max()).predicted_mean
 
-        D = find_seasonal_integration_order(spend, s=s)
+        s = 12  # s is same as m
+        D = 0
+        try:
+            D = find_seasonal_integration_order(train["EvidencedSpend"], s=s)
+        except ValueError as e:
+            logger.error(f"Error while calculating D: {e}")
+
         Ps = range(0, 4, 1)
         Qs = range(0, 4, 1)
         aic_scores = get_aic_scores(train["EvidencedSpend"], ps=ps, qs=qs, Ps=Ps, Qs=Qs, d=d, D=D, s=s)
-        logger.debug(f"AIC scores are:\n{aic_scores.head(len(ps) * len(qs) * len(Ps) * len(Qs))}")
+        logger.debug(f"AIC scores are:\n{aic_scores}")
         lowest_aic_score = aic_scores.iloc[0]
         best_p = int(lowest_aic_score["p"])
         best_q = int(lowest_aic_score["q"])
@@ -1179,8 +1191,7 @@ def model_prophet(df: pd.DataFrame, category: str, sector: str, run: bool = Fals
         logger.debug(f"Is SARIMA({best_p},{d},{best_q})({best_P},{D},{best_Q}){s} residual just random error? " +
                      f"{is_residual_white_noise}")
 
-        sarima_pred = sarima_model_fit.get_prediction(train_size, dataset_size - 1).predicted_mean
-        test["sarima_forecast"] = sarima_pred
+        test["sarima_forecast"] = sarima_model_fit.get_prediction(test.index.min(), test.index.max()).predicted_mean
 
         train_prophet = train[["SpendMonth", "EvidencedSpend"]]
         test_prophet = test[["SpendMonth", "EvidencedSpend"]]
@@ -1191,24 +1202,27 @@ def model_prophet(df: pd.DataFrame, category: str, sector: str, run: bool = Fals
         seasonality_prior_scale_values = [0.01, 0.1, 1.0, 10.0]
 
         lowest_mape = []
+
         for changepoint_prior_scale, seasonality_prior_scale in list(product(changepoint_prior_scale_values,
                                                                              seasonality_prior_scale_values)):
             m = Prophet(changepoint_prior_scale=changepoint_prior_scale,
                         seasonality_prior_scale=seasonality_prior_scale)
             m.add_country_holidays(country_name="UK")
-            m.fit(train_prophet)
-            future = m.make_future_dataframe(periods=test_size, freq="M")
-            forecast = m.predict(future)
-            test_prophet[["yhat", "yhat_lower", "yhat_upper"]] = forecast[["yhat", "yhat_lower", "yhat_upper"]]
-            prohet_mean_absolute_percentage_error = mean_absolute_percentage_error(test_prophet["y"],
-                                                                                   test_prophet["yhat"]) * 100.
+            m.fit(train_prophet.copy(deep=True))
+
+            forecast = m.predict(train_prophet)
+            forecast.index = train_prophet.index
+            train_prophet_copy = train_prophet.copy(deep=True)
+            train_prophet_copy[["yhat", "yhat_lower", "yhat_upper"]] = forecast[["yhat", "yhat_lower", "yhat_upper"]]
+            prophet_mean_absolute_percentage_error = mean_absolute_percentage_error(train_prophet_copy["y"],
+                                                                                    train_prophet_copy["yhat"]) * 100.
             lowest_mape.append((changepoint_prior_scale, seasonality_prior_scale,
-                                prohet_mean_absolute_percentage_error))
+                                prophet_mean_absolute_percentage_error))
 
         mape_scores = pd.DataFrame(data=lowest_mape, columns=["changepoint_prior_scale", "seasonality_prior_scale",
                                                               "min_score"]) \
             .sort_values(by="min_score", ascending=True).reset_index(drop=True)
-        logger.debug(f"MAPE Scores:\n{mape_scores.head(len(lowest_mape))}")
+        logger.debug(f"MAPE Scores:\n{mape_scores}")
         best_params = mape_scores.iloc[0]
         best_changepoint_prior_scale = float(best_params["changepoint_prior_scale"])
         best_seasonality_prior_scale = float(best_params["seasonality_prior_scale"])
@@ -1219,10 +1233,10 @@ def model_prophet(df: pd.DataFrame, category: str, sector: str, run: bool = Fals
                     seasonality_prior_scale=best_seasonality_prior_scale)
         m.add_country_holidays(country_name="UK")
         m.fit(train_prophet)
-        future = m.make_future_dataframe(periods=test_size, freq="M")
-        forecast = m.predict(future)
-        test_prophet[["yhat", "yhat_lower", "yhat_upper"]] = forecast[["yhat", "yhat_lower", "yhat_upper"]]
-        test["prophet_forecast"] = test_prophet["yhat"]
+        forecast = m.predict(test_prophet)
+        forecast.index = test_prophet.index
+        test["prophet_forecast"] = forecast["yhat"]
+        logger.debug(f"Prophet forecast details:\n{forecast}")
 
         fig, ax = plt.subplots()
         ax.plot(category_sector_spend["SpendMonth"], spend / 1e6, label=f"{category}:{sector}")
@@ -1294,16 +1308,18 @@ def model_prophet(df: pd.DataFrame, category: str, sector: str, run: bool = Fals
         plt.tight_layout()
         plt.show()
 
-        logger.debug(f"Forecast are:\n{test.head(test_size)}")
+        logger.debug(f"Forecast are:\n{test}")
 
 
-def get_best_forecast(df: pd.DataFrame, category: str, sector: str, run: bool = False) -> pd.DataFrame:
+def forecast_future_spend(df: pd.DataFrame, category: str, sector: str, forecast_end_date: date,
+                          run: bool = False) -> pd.DataFrame:
     """Generate the best forecast by comparing various models.
 
         Args:
             df: DataFrame containing data
             category: Category for which spend data should be forecasted
             sector: Market sector for which spend data should be forecasted
+            forecast_end_date: The last date till which forecast should be done
             run: A flag to run this function, pass true to run this function
 
         Returns:
@@ -1311,11 +1327,7 @@ def get_best_forecast(df: pd.DataFrame, category: str, sector: str, run: bool = 
 
         """
     if run:
-        category_sector_spend: pd.DataFrame = df[(df["Category"] == category) & (df["MarketSector"] == sector)] \
-            .reset_index(drop=True)
-        logger.debug(f"Dataset size is: {category_sector_spend.shape[0]}")
-        spend = category_sector_spend["EvidencedSpend"]
-
+        category_sector_spend = prepare_data(df=df, category=category, sector=sector)
         dataset_size = len(category_sector_spend)
         train_ratio = 0.9
         train_size = int(dataset_size * train_ratio)
@@ -1325,27 +1337,38 @@ def get_best_forecast(df: pd.DataFrame, category: str, sector: str, run: bool = 
 
         train = category_sector_spend[:train_size]
         test = category_sector_spend[train_size:]
+        spend = train["EvidencedSpend"]
 
-        d = find_integration_order(spend)
+        d = 0
+        try:
+            d = find_integration_order(spend)
+        except ValueError as e:
+            logger.error(f"Error while calculating d: {e}")
 
         ps = range(0, 4, 1)  # Possible value of order p of AR(p)
         qs = range(0, 4, 1)  # Possible value of order q of MA(q)
         Ps = [0]  # Seasonality is 0 for ARIMA
         Qs = [0]  # Seasonality is 0 for ARIMA
         D = 0
-        s = 12  # s is same as m
+        s = 0  # s is same as m
         aic_scores = get_aic_scores(train["EvidencedSpend"], ps=ps, qs=qs, Ps=Ps, Qs=Qs, d=d, D=D, s=s)
         lowest_aic_score = aic_scores.iloc[0]
         best_p = int(lowest_aic_score["p"])
         best_q = int(lowest_aic_score["q"])
 
-        model = SARIMAX(train["EvidencedSpend"], order=(best_p, d, best_q), seasonal_order=(Ps[0], D, Qs[0], s),
-                        simple_differencing=False)
-        model_fit = model.fit(disp=False)
-        arima_pred = model_fit.get_prediction(train_size, dataset_size - 1).predicted_mean
-        test["arima_forecast"] = arima_pred
+        arima_model = SARIMAX(train["EvidencedSpend"], order=(best_p, d, best_q), seasonal_order=(Ps[0], D, Qs[0], s),
+                              simple_differencing=False)
+        best_arima_model = SARIMAX(category_sector_spend["EvidencedSpend"], order=(best_p, d, best_q),
+                                   seasonal_order=(Ps[0], D, Qs[0], s), simple_differencing=False)
+        arima_model_fit = arima_model.fit(disp=False)
+        test["arima_forecast"] = arima_model_fit.get_prediction(test.index.min(), test.index.max()).predicted_mean
 
-        D = find_seasonal_integration_order(spend, s=s)
+        s = 12  # s is same as m
+        D = 0
+        try:
+            D = find_seasonal_integration_order(spend, s=s)
+        except ValueError as e:
+            logger.error(f"Error while calculating D: {e}")
         Ps = range(0, 4, 1)
         Qs = range(0, 4, 1)
         aic_scores = get_aic_scores(train["EvidencedSpend"], ps=ps, qs=qs, Ps=Ps, Qs=Qs, d=d, D=D, s=s)
@@ -1357,9 +1380,11 @@ def get_best_forecast(df: pd.DataFrame, category: str, sector: str, run: bool = 
         sarima_model = SARIMAX(train["EvidencedSpend"], order=(best_p, d, best_q),
                                seasonal_order=(best_P, D, best_Q, s),
                                simple_differencing=False)
+        best_sarima_model = SARIMAX(category_sector_spend["EvidencedSpend"], order=(best_p, d, best_q),
+                                    seasonal_order=(best_P, D, best_Q, s),
+                                    simple_differencing=False)
         sarima_model_fit = sarima_model.fit(disp=False)
-        sarima_pred = sarima_model_fit.get_prediction(train_size, dataset_size - 1).predicted_mean
-        test["sarima_forecast"] = sarima_pred
+        test["sarima_forecast"] = sarima_model_fit.get_prediction(test.index.min(), test.index.max()).predicted_mean
 
         train_prophet = train[["SpendMonth", "EvidencedSpend"]]
         test_prophet = test[["SpendMonth", "EvidencedSpend"]]
@@ -1375,14 +1400,16 @@ def get_best_forecast(df: pd.DataFrame, category: str, sector: str, run: bool = 
             m = Prophet(changepoint_prior_scale=changepoint_prior_scale,
                         seasonality_prior_scale=seasonality_prior_scale)
             m.add_country_holidays(country_name="UK")
-            m.fit(train_prophet)
-            future = m.make_future_dataframe(periods=test_size, freq="M")
-            forecast = m.predict(future)
-            test_prophet[["yhat", "yhat_lower", "yhat_upper"]] = forecast[["yhat", "yhat_lower", "yhat_upper"]]
-            prohet_mean_absolute_percentage_error = mean_absolute_percentage_error(test_prophet["y"],
-                                                                                   test_prophet["yhat"]) * 100.
+            m.fit(train_prophet.copy(deep=True))
+            forecast = m.predict(train_prophet)
+            forecast.index = train_prophet.index
+            train_prophet_copy = train_prophet.copy(deep=True)
+            train_prophet_copy[["yhat", "yhat_lower", "yhat_upper"]] = forecast[["yhat", "yhat_lower", "yhat_upper"]]
+            prophet_mean_absolute_percentage_error = mean_absolute_percentage_error(train_prophet_copy["y"],
+                                                                                    train_prophet_copy["yhat"]) * 100.
+
             lowest_mape.append((changepoint_prior_scale, seasonality_prior_scale,
-                                prohet_mean_absolute_percentage_error))
+                                prophet_mean_absolute_percentage_error))
 
         mape_scores = pd.DataFrame(
             data=lowest_mape, columns=["changepoint_prior_scale", "seasonality_prior_scale", "min_score"]) \
@@ -1395,48 +1422,107 @@ def get_best_forecast(df: pd.DataFrame, category: str, sector: str, run: bool = 
                     seasonality_prior_scale=best_seasonality_prior_scale)
         m.add_country_holidays(country_name="UK")
         m.fit(train_prophet)
-        future = m.make_future_dataframe(periods=test_size, freq="M")
-        forecast = m.predict(future)
-        test_prophet[["yhat", "yhat_lower", "yhat_upper"]] = forecast[["yhat", "yhat_lower", "yhat_upper"]]
-        test["prophet_forecast"] = test_prophet["yhat"]
+        forecast = m.predict(test_prophet)
+        forecast.index = test_prophet.index
+        test["prophet_forecast"] = forecast["yhat"]
 
-        arima_mae = mean_absolute_error(test["EvidencedSpend"], test["arima_forecast"])
-        sarima_mae = mean_absolute_error(test["EvidencedSpend"], test["sarima_forecast"])
-        prophet_mae = mean_absolute_error(test["EvidencedSpend"], test["prophet_forecast"])
-        logger.debug(f"ARIMA seasonal MAE.: {arima_mae:.2f}")
-        logger.debug(f"SARIMA seasonal MAE: {sarima_mae:.2f}")
-        logger.debug(f"Prophet MAE........: {prophet_mae:.2f}")
+        arima_mape = mean_absolute_percentage_error(test["EvidencedSpend"], test["arima_forecast"]) * 100.
+        sarima_mape = mean_absolute_percentage_error(test["EvidencedSpend"], test["sarima_forecast"]) * 100.
+        prophet_mape = mean_absolute_percentage_error(test["EvidencedSpend"], test["prophet_forecast"]) * 100.
+        logger.debug(f"ARIMA seasonal MAPE.: {arima_mape:.2f}")
+        logger.debug(f"SARIMA seasonal MAPE: {sarima_mape:.2f}")
+        logger.debug(f"Prophet MAPE........: {prophet_mape:.2f}")
 
-        best_mae = np.argmin(np.array([arima_mae, sarima_mae, prophet_mae]))
-        forecast = test[["SpendMonth", "Category", "MarketSector", "EvidencedSpend"]]
-        if best_mae == 0:
-            forecast["Forecast"] = test["arima_forecast"]
-        elif best_mae == 1:
-            forecast["Forecast"] = test["sarima_forecast"]
-        elif best_mae == 2:
-            forecast["Forecast"] = test["prophet_forecast"]
+        best_mape = np.argmin(np.array([arima_mape, sarima_mape, prophet_mape]))
+
+        forecast_dates = pd.date_range(start=category_sector_spend["SpendMonth"].min(axis=0), end=forecast_end_date,
+                                       freq="MS")
+        forecast = pd.DataFrame(data=forecast_dates, columns=["SpendMonth"])
+        forecast["Category"] = category
+        forecast["MarketSector"] = sector
+        forecast = forecast[forecast["SpendMonth"] > category_sector_spend["SpendMonth"].max(axis=0)]
+        forecast["Forecast"] = np.NAN
+
+        if best_mape == 0:
+            best_arima_model_fit = best_arima_model.fit(disp=False)
+            forecast["Forecast"] = best_arima_model_fit.get_prediction(forecast.index.min(),
+                                                                       forecast.index.max()).predicted_mean.values
+        elif best_mape == 1:
+            best_sarima_model_fit = best_sarima_model.fit(disp=False)
+            forecast["Forecast"] = best_sarima_model_fit.get_prediction(forecast.index.min(),
+                                                                        forecast.index.max()).predicted_mean.values
+        elif best_mape == 2:
+            best_prophet = Prophet(changepoint_prior_scale=best_changepoint_prior_scale,
+                                   seasonality_prior_scale=best_seasonality_prior_scale)
+            best_prophet.add_country_holidays(country_name="UK")
+
+            prophet_data = category_sector_spend[["SpendMonth", "EvidencedSpend"]].copy(deep=True)
+            prophet_data.columns = ["ds", "y"]
+            best_prophet.fit(prophet_data)
+            prophet_forecast_dates = forecast[["SpendMonth"]]
+            prophet_forecast_dates.columns = ["ds"]
+            best_prophet_forecast = best_prophet.predict(prophet_forecast_dates)
+            best_prophet_forecast.index = forecast.index
+            forecast["Forecast"] = best_prophet_forecast["yhat"]
 
         return forecast
 
 
 def main():
+    default_forecast_end_date = date.today() + relativedelta(years=2)
     parser = argparse.ArgumentParser(usage="data_analysis.py [path to local dataset (optional)] ",
                                      description="Exploratory Data Analysis")
     parser.add_argument("--local_data_path", default=None, metavar="Path to the local dataset folder", type=str)
+    parser.add_argument("--forecast_output_path", default=None, metavar="Path of the folder to save the forecast",
+                        type=str)
+    parser.add_argument("--forecast_end_date", default=default_forecast_end_date,
+                        metavar="Forecast end date in yyyy-MM-dd format",
+                        type=date.fromisoformat)
 
     parsed = parser.parse_args()
     local_data_path = parsed.local_data_path
-
-    raw_df = get_data_for_analysis(local_data_path)
-    prepared_df = prepare_data(raw_df)
+    forecast_output_path = parsed.forecast_output_path
+    forecast_end_date = parsed.forecast_end_date
 
     category, sector = get_category_sector(index=0)
-    visualize_raw_data(df=prepared_df, category=category, sector=sector, run=False)
-    is_spend_random_walk(prepared_df, category=category, sector=sector, run=False)
-    model_arma(prepared_df, category=category, sector=sector, run=False)
-    model_arima(prepared_df, category=category, sector=sector, run=False)
-    model_sarima(prepared_df, category=category, sector=sector, run=False)
-    model_prophet(prepared_df, category=category, sector=sector, run=False)
+    raw_df = get_data_for_analysis(local_data_path=local_data_path, category=category, sector=sector)
+    aggregated_df = aggregate_spend(raw_df)
+    visualize_raw_data(df=aggregated_df, category=category, sector=sector, run=False)
+    is_spend_random_walk(aggregated_df, category=category, sector=sector, run=False)
+    model_arma(aggregated_df, category=category, sector=sector, run=False)
+    model_arima(aggregated_df, category=category, sector=sector, run=False)
+    model_sarima(aggregated_df, category=category, sector=sector, run=False)
+    model_prophet(aggregated_df, category=category, sector=sector, run=False)
+    future_forecast = forecast_future_spend(df=aggregated_df, category=category, sector=sector,
+                                            forecast_end_date=forecast_end_date, run=False)
+    logger.debug(f"Future forecast is:\n{future_forecast}")
+
+    # forecast_output_path = None
+    if forecast_output_path:
+        forecast_file_name = "forecast.csv"
+        full_file_path = os.path.join(forecast_output_path, forecast_file_name)
+        individual_forecast_path = os.path.join(forecast_output_path, "individuals")
+        if os.path.exists(forecast_output_path):
+            logger.info(f"Deleting existing output directory and its contents: {forecast_output_path}")
+            shutil.rmtree(individual_forecast_path)
+        os.makedirs(individual_forecast_path, exist_ok=True)
+
+        for i, (cat, sect) in enumerate(get_all_category_sector()):
+            logger.debug(f"{i}. Forecasting for category = '{cat}' and sector = '{sect}'")
+            try:
+                raw_df = get_data_for_analysis(local_data_path=local_data_path, category=cat, sector=sect)
+                aggregated_df = aggregate_spend(raw_df)
+                category_sector_forecast = forecast_future_spend(df=aggregated_df, category=cat, sector=sect,
+                                                                 forecast_end_date=forecast_end_date, run=True)
+                category_sector_forecast.to_csv(os.path.join(individual_forecast_path, f"{i}.csv"), index=False)
+            except Exception as e:
+                msg = f"Error in generation forecast for ({i}) category = '{cat}' and sector = '{sect}'" + \
+                      f"due to {e}"
+                logger.error(msg)
+
+        forecast_files = glob.glob(os.path.join(individual_forecast_path, "*.csv"))
+        forecast = pd.concat([pd.read_csv(f) for f in forecast_files], ignore_index=True).reset_index(drop=True)
+        forecast.to_csv(full_file_path, index=False)
 
 
 if __name__ == '__main__':
