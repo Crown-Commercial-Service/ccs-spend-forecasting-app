@@ -9,3 +9,12 @@ format_check:
 
 lint:
 	poetry run pylint pipeline test
+
+pipeline_fill_missing_months:
+	poetry run python -m pipeline.main
+
+pipeline_get_active_combinations:
+	poetry run python -m pipeline.jobs.get_active_combinations
+
+pipeline_run_forecast:
+	poetry run python -m pipeline.jobs.run_forecast_and_output_to_blob

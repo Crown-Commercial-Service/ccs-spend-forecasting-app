@@ -125,7 +125,7 @@ The output is stored on blob storage in folder  `SpendDataFilledMissingMonth`.
 
 ##### To run this job on a local machine:
 ```shell
-poetry run python -m pipeline.main
+make pipeline_fill_missing_months
 ```
 
 ##### To run this job from Azure:
@@ -149,7 +149,7 @@ The output is stored on blob storage in folder `ForecastOutput`.
 
 ##### To run this job on a local machine:
 ```shell
-poetry run python -m pipeline.jobs.run_forecast_and_output_to_blob
+make pipeline_run_forecast
 ```
 
 ##### To run this job from Azure:
@@ -173,7 +173,7 @@ The output is stored on blob storage in folder `ActiveCombinations`.
 
 ##### To run this job on a local machine:
 ```shell
-poetry run python -m pipeline.jobs.get_active_combinations
+make pipeline_get_active_combinations
 ```
 
 ##### To run this job from Azure:
@@ -186,5 +186,5 @@ The unit test of this repo is located in `test` directory. You can use the below
 test suite:
 
 ```shell
-pytest .
+make unit_testing
 ```
