@@ -5,7 +5,7 @@ from random import random
 from unittest import TestCase
 from unittest.mock import Mock
 
-from pipeline.jobs.mock_forecast import create_mock_model
+from pipeline.models.mock_forecast import create_mock_model
 from pipeline.jobs.models_comparison import (
     create_models_comparison,
     fill_in_model_suggestion,

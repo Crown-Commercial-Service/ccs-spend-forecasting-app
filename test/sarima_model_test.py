@@ -2,7 +2,7 @@ import datetime
 import pandas as pd
 from unittest.mock import MagicMock
 
-from pipeline.jobs.sarima_model import SarimaModel
+from pipeline.models.sarima_model import SarimaModel
 
 
 def test_SARIMA_model_initiation():

@@ -3,7 +3,7 @@ import datetime
 import pandas as pd
 from dateutil.relativedelta import relativedelta
 
-from pipeline.jobs.mock_forecast import (
+from pipeline.models.mock_forecast import (
     MockForecastModel,
 )
 

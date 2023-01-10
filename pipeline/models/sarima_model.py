@@ -7,12 +7,11 @@ import pandas as pd
 import numpy as np
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 
-from pipeline.jobs.model_utils import (
+from pipeline.models.model_utils import (
     find_integration_order,
     find_seasonal_integration_order,
-    ljung_box_residual_test,
 )
-from pipeline.jobs.forecast_model import ForecastModel
+from pipeline.models.forecast_model import ForecastModel
 from utils import get_logger
 
 logger = get_logger()

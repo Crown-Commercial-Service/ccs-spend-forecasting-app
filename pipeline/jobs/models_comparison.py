@@ -5,7 +5,7 @@ from sklearn.metrics import (
     mean_absolute_percentage_error,
 )
 
-from pipeline.jobs.forecast_model import ForecastModel
+from pipeline.models.forecast_model import ForecastModel
 from utils import get_logger
 
 logger = get_logger()

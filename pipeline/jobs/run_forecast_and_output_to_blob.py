@@ -10,10 +10,10 @@ if "DATABRICKS_RUNTIME_VERSION" in os.environ:
 
 
 from utils import get_logger
-from pipeline.jobs.sarima_model import SarimaModel
-from pipeline.jobs.arima_model import ArimaModel
-from pipeline.jobs.arma_model import ArmaModel
-from pipeline.jobs.forecast_model import ForecastModel
+from pipeline.models.sarima_model import SarimaModel
+from pipeline.models.arima_model import ArimaModel
+from pipeline.models.arma_model import ArmaModel
+from pipeline.models.forecast_model import ForecastModel
 from pipeline.jobs.models_comparison import create_models_comparison
 from pipeline.utils import (
     connect_spark_to_blob_storage,

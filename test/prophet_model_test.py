@@ -1,6 +1,6 @@
 import datetime
 import pandas as pd
-from pipeline.jobs.prophet_model import ProphetModel
+from pipeline.models.prophet_model import ProphetModel
 
 
 def test_Prophet_model_initiation():
