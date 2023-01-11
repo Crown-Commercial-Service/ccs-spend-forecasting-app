@@ -45,7 +45,8 @@ class ModelComparisonTest(TestCase):
                 'Model B Forecast': [950.0, 1050],
                 'Model B Error %': [0.05, 0.05],
                 'Model B MAPE': [0.05, 0.05],
-                'Model Suggested': ['Model B', 'Model B']
+                'Model Suggested': ['Model B', 'Model B'],
+                'MAPE of Suggested Model': [0.05, 0.05]
             }
         )
 
@@ -71,6 +72,12 @@ class ModelComparisonTest(TestCase):
         # since we only have one combination, all MAPE for the same model should be the same
         assert len(set(actual["Model A MAPE"])) == 1
         assert len(set(actual["Model B MAPE"])) == 1
+
+        # check that the "MAPE of Suggested Model" column correctly capture the value.
+        model_suggested = actual.iloc[0]["Model Suggested"]
+        assert (
+            actual[f"{model_suggested} MAPE"] == actual["MAPE of Suggested Model"]
+        ).all()
 
     def test_for_multiple_combinations(self):
         """Basic test for comparing models with multiple Category/MarketSector combination in input data"""
@@ -102,6 +109,7 @@ class ModelComparisonTest(TestCase):
             "Model B Error %",
             "Model B MAPE",
             "Model Suggested",
+            "MAPE of Suggested Model",
         ]
 
         actual = create_models_comparison(
@@ -120,8 +128,18 @@ class ModelComparisonTest(TestCase):
                     (actual["Category"] == category)
                     & (actual["MarketSector"] == market_sector)
                 ]
+
                 assert len(set(output_for_current_combination["Model A MAPE"])) == 1
                 assert len(set(output_for_current_combination["Model B MAPE"])) == 1
+
+                # check that the "MAPE of Suggested Model" column correctly capture the value.
+                model_suggested = output_for_current_combination.iloc[0][
+                    "Model Suggested"
+                ]
+                assert (
+                    output_for_current_combination[f"{model_suggested} MAPE"]
+                    == output_for_current_combination["MAPE of Suggested Model"]
+                ).all()
 
     def test_for_handling_na_data(self):
         """Test for handling input data with months of no spending, N/A or zero values"""

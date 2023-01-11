@@ -195,9 +195,13 @@ def fill_in_model_suggestion(
 
     return comparison_table.assign(
         **{
-            "Model Suggested": comparison_table[metric_column_names].idxmin(axis=1)
             # idxmin fills the model suggestion with column names such as "Model A MAPE", so run a replace to change that back to "Model A"
-            .replace(renamer)
+            "Model Suggested": comparison_table[metric_column_names]
+            .idxmin(axis=1)
+            .replace(renamer),
+            "MAPE of Suggested Model": comparison_table[metric_column_names].min(
+                axis=1
+            ),
         }
     )
 

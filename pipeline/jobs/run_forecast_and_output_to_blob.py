@@ -13,6 +13,7 @@ from utils import get_logger
 from pipeline.models.sarima_model import SarimaModel
 from pipeline.models.arima_model import ArimaModel
 from pipeline.models.arma_model import ArmaModel
+from pipeline.models.prophet_model import ProphetModel
 from pipeline.models.forecast_model import ForecastModel
 from pipeline.jobs.models_comparison import create_models_comparison
 from pipeline.utils import (
@@ -101,15 +102,12 @@ def model_choices() -> list[ForecastModel]:
 
     logger.debug("Instantiating models...")
 
-    sarima = SarimaModel(search_hyperparameters=True)
+    sarima = SarimaModel(search_hyperparameters=False)
     arima = ArimaModel(search_hyperparameters=True)
     arma = ArmaModel(search_hyperparameters=True)
+    prophet = ProphetModel()
 
-    return [
-        sarima,
-        arima,
-        arma,
-    ]
+    return [sarima, arima, arma, prophet]
 
 
 def compare_models_performance(
@@ -132,7 +130,12 @@ def compare_models_performance(
         input_df=input_df, train_ratio=0.9, models=models
     )
 
-    columns_to_extract = ["Category", "MarketSector", "Model Suggested"]
+    columns_to_extract = [
+        "Category",
+        "MarketSector",
+        "MAPE of Suggested Model",
+        "Model Suggested",
+    ]
     model_suggestions = comparison_table[columns_to_extract].drop_duplicates()
 
     logger.debug("Comparison result:")
