@@ -381,7 +381,7 @@ def save_pandas_dataframe_to_blob(
     pandas_df: pd.DataFrame,
     filename: str,
 ):
-    """Save a pyspark dataframe to blob storage in parquet format"""
+    """Save a pyspark dataframe to blob storage in csv format"""
 
     if is_running_in_databricks():
         blob_storage_root_path = get_blob_storage_root_path()
@@ -400,4 +400,4 @@ def save_pandas_dataframe_to_blob(
         pandas_df.to_csv(file_buffer, index=False)
         file_buffer.seek(0)
 
-        container_client.upload_blob(name=filename, data=file_buffer)
+        container_client.upload_blob(name=filename, data=file_buffer, overwrite=True)
