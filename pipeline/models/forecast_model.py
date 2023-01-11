@@ -48,9 +48,8 @@ class ForecastModel(ABC):
         """
         raise NotImplementedError
 
-
     def prepare_input_data(self, input_df: pd.DataFrame) -> pd.DataFrame:
-        """ Helper method for preparing the input data before use.
+        """Helper method for preparing the input data before use.
         Sum up the spends by month, so that for each combination, there is only one row for one month.
         Also strips away any irrelavant columns from input data
 

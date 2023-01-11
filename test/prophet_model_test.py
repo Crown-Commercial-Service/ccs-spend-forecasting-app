@@ -61,7 +61,7 @@ def test_Profect_model_create_forecast():
 
 
 def test_prophet_model_create_forecast_with_multiple_combinations():
-    """Test that calling create_forecast with input data of multiple Category/MarketSector combination 
+    """Test that calling create_forecast with input data of multiple Category/MarketSector combination
     will generate n months forecast for each combination"""
     input_df = pd.DataFrame(
         # fmt: off
