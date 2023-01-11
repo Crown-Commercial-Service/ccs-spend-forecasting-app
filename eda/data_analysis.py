@@ -139,9 +139,6 @@ def prepare_data(df: pd.DataFrame, category: str, sector: str) -> pd.DataFrame:
     """
     category_sector_spend = df[(df["Category"] == category) & (df["MarketSector"] == sector)].reset_index(drop=True)
     category_sector_spend.set_index("SpendMonth", inplace=True, drop=False)
-    # complete_data = pd.DataFrame(data=pd.date_range(start=category_sector_spend["SpendMonth"].min(axis=0),
-    #                                                 end=category_sector_spend["SpendMonth"].max(axis=0), freq="MS"),
-    #                              columns=["SpendMonth"])
     end_date = max([category_sector_spend["SpendMonth"].max(axis=0), date.today() - relativedelta(months=2)])
     complete_data = pd.DataFrame(data=pd.date_range(start=category_sector_spend["SpendMonth"].min(axis=0),
                                                     end=end_date, freq="MS"), columns=["SpendMonth"])
@@ -155,6 +152,16 @@ def prepare_data(df: pd.DataFrame, category: str, sector: str) -> pd.DataFrame:
 
 
 def get_all_category_sector(latest: bool = False) -> list[Tuple[str, str]]:
+    """
+    Get list of all the live categories and sector. If the file eda/category_sector.csv did not exist data will be
+    fetched from the database and saved to the csv file. This will help user to avoid unnecessary data fetch unlees
+    they want to refresh the csv file.
+    Args:
+        latest: If True refreshes the eda/category_sector.csv file from the database. Default value is False
+
+    Returns:
+
+    """
     category_sector_list = []
     if not os.path.exists(local_category_sector_path):
         latest = True
@@ -164,11 +171,9 @@ def get_all_category_sector(latest: bool = False) -> list[Tuple[str, str]]:
 
     if latest:
         sql = """
-            SELECT
-            COUNT (a.SpendMonth) AS RecordCount,a.Category,a.MarketSector
-            FROM
-            (
-               SELECT
+            SELECT COUNT (a.SpendMonth) AS RecordCount,a.Category,a.MarketSector
+            FROM 
+            (SELECT
                DATEADD(month,3,CONVERT(date,CONCAT(spend.FYMonthKey,'01'),112)) as SpendMonth,
                spend.Category,
                ISNULL(cust.MarketSector,'Unassigned') AS MarketSector
@@ -176,17 +181,9 @@ def get_all_category_sector(latest: bool = False) -> list[Tuple[str, str]]:
                INNER JOIN dbo.FrameworkCategoryPillar frame ON spend.FrameworkNumber = frame.FrameworkNumber
                LEFT JOIN dbo.Customers cust ON spend.CustomerURN = cust.CustomerKey
                WHERE frame.STATUS IN ('Live', 'Expired - Data Still Received') AND DATEADD
-               (
-                  month,
-                  3,
-                  CONVERT(date,CONCAT(spend.FYMonthKey,'01'),112)
-               )
-               < DATEADD(month,-2,GETDATE())
-               GROUP BY spend.Category,
-               cust.MarketSector,
-               spend.FYMonthKey
-            )
-            AS a
+               (month,3,CONVERT(date,CONCAT(spend.FYMonthKey,'01'),112)) < DATEADD(month,-2,GETDATE())
+               GROUP BY spend.Category, ISNULL(cust.MarketSector,'Unassigned'), spend.FYMonthKey
+            ) AS a
             GROUP BY a.Category,a.MarketSector
             ORDER BY RecordCount DESC,a.Category,a.MarketSector
             """
@@ -203,7 +200,8 @@ def get_all_category_sector(latest: bool = False) -> list[Tuple[str, str]]:
 def get_category_sector(index: int = 0) -> Tuple[str, str]:
     """A helper method to return category and market sector from a list. User needs pass the index and category and
     market sector stored at that index will be returned. This is used to test model for various category and market
-    sector combinations.
+    sector combinations. This uses a local file called eda/category_sector.csv, if file didn't exist, data will be
+    fetched from the database and saved to the csv file.
     Args:
         index: Index of the list
 
@@ -1443,27 +1441,31 @@ def forecast_future_spend(df: pd.DataFrame, category: str, sector: str, forecast
         forecast = forecast[forecast["SpendMonth"] > category_sector_spend["SpendMonth"].max(axis=0)]
         forecast["Forecast"] = np.NAN
 
-        if best_mape == 0:
-            best_arima_model_fit = best_arima_model.fit(disp=False)
-            forecast["Forecast"] = best_arima_model_fit.get_prediction(forecast.index.min(),
-                                                                       forecast.index.max()).predicted_mean.values
-        elif best_mape == 1:
-            best_sarima_model_fit = best_sarima_model.fit(disp=False)
-            forecast["Forecast"] = best_sarima_model_fit.get_prediction(forecast.index.min(),
-                                                                        forecast.index.max()).predicted_mean.values
-        elif best_mape == 2:
-            best_prophet = Prophet(changepoint_prior_scale=best_changepoint_prior_scale,
-                                   seasonality_prior_scale=best_seasonality_prior_scale)
-            best_prophet.add_country_holidays(country_name="UK")
+        best_arima_model_fit = best_arima_model.fit(disp=False)
+        best_sarima_model_fit = best_sarima_model.fit(disp=False)
+        best_prophet = Prophet(changepoint_prior_scale=best_changepoint_prior_scale,
+                               seasonality_prior_scale=best_seasonality_prior_scale)
+        best_prophet.add_country_holidays(country_name="UK")
 
-            prophet_data = category_sector_spend[["SpendMonth", "EvidencedSpend"]].copy(deep=True)
-            prophet_data.columns = ["ds", "y"]
-            best_prophet.fit(prophet_data)
-            prophet_forecast_dates = forecast[["SpendMonth"]]
-            prophet_forecast_dates.columns = ["ds"]
-            best_prophet_forecast = best_prophet.predict(prophet_forecast_dates)
-            best_prophet_forecast.index = forecast.index
-            forecast["Forecast"] = best_prophet_forecast["yhat"]
+        forecast["ARIMA_Forecast"] = best_arima_model_fit.get_prediction(forecast.index.min(),
+                                                                         forecast.index.max()).predicted_mean.values
+        forecast["SARIMA_Forecast"] = best_sarima_model_fit.get_prediction(forecast.index.min(),
+                                                                           forecast.index.max()).predicted_mean.values
+        prophet_data = category_sector_spend[["SpendMonth", "EvidencedSpend"]].copy(deep=True)
+        prophet_data.columns = ["ds", "y"]
+        best_prophet.fit(prophet_data)
+        prophet_forecast_dates = forecast[["SpendMonth"]]
+        prophet_forecast_dates.columns = ["ds"]
+        best_prophet_forecast = best_prophet.predict(prophet_forecast_dates)
+        best_prophet_forecast.index = forecast.index
+        forecast["Prophet_Forecast"] = best_prophet_forecast["yhat"]
+
+        if best_mape == 0:
+            forecast["Forecast"] = forecast["ARIMA_Forecast"]
+        elif best_mape == 1:
+            forecast["Forecast"] = forecast["SARIMA_Forecast"]
+        elif best_mape == 2:
+            forecast["Forecast"] = forecast["Prophet_Forecast"]
 
         return forecast
 
@@ -1497,7 +1499,6 @@ def main():
                                             forecast_end_date=forecast_end_date, run=False)
     logger.debug(f"Future forecast is:\n{future_forecast}")
 
-    # forecast_output_path = None
     if forecast_output_path:
         forecast_file_name = "forecast.csv"
         full_file_path = os.path.join(forecast_output_path, forecast_file_name)
