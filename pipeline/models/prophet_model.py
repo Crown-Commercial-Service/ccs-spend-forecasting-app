@@ -111,30 +111,20 @@ class ProphetModel(ForecastModel):
 
         output_df_list = []
 
-        for combination, category_sector_spend in prepared_data.groupby(
-            self.columns_to_consider, as_index=False
-        ):
+        # fmt: off
+        for combination, category_sector_spend in prepared_data.groupby(self.columns_to_consider, as_index=False):
             # if already searched for changepoint_prior_scale and seasonality_prior_scale for this combination, reuse the best values.
             # otherwise, run a search for the best prior scale values
             if combination in self._hyperparameters_cache:
-                (
-                    changepoint_prior_scale,
-                    seasonality_prior_scale,
-                ) = self._hyperparameters_cache[combination]
+                best_params = self._hyperparameters_cache[combination]
+                self.logger.debug(f"{self.name}:  Reuse the best prior scales {best_params} for {combination}...")
             else:
-                self.logger.debug(
-                    f"{self.name}: Start searching for best prior scales for {combination}..."
-                )
-                (
-                    changepoint_prior_scale,
-                    seasonality_prior_scale,
-                ) = self.find_best_prior_scales(
-                    category_sector_spend=category_sector_spend
-                )
-                self._hyperparameters_cache[combination] = (
-                    changepoint_prior_scale,
-                    seasonality_prior_scale,
-                )
+                self.logger.debug(f"{self.name}: Start searching for best prior scales for {combination}...")
+                best_params = self.find_best_prior_scales(category_sector_spend=category_sector_spend)
+                
+                self._hyperparameters_cache[combination] = best_params
+            
+            changepoint_prior_scale, seasonality_prior_scale = best_params
 
             forecast_df = self.create_forecast_with_given_prior_scales(
                 category_sector_spend=category_sector_spend,
@@ -144,6 +134,7 @@ class ProphetModel(ForecastModel):
             )
 
             output_df_list.append(forecast_df)
+        # fmt: on
 
         output_df = pd.concat(output_df_list)
 

@@ -45,11 +45,11 @@ def main():
         else today.replace(year=today.year + 1, month=1, day=1)
     )
 
-    forecast_df = run_forecast_with_suggested_models(
+    forecast_df = run_forecast_with_all_models(
         input_df=input_df,
         model_suggestions=model_suggestions,
         models=models,
-        months_to_forecast=12,
+        months_to_forecast=24,
         start_month=next_month,
     )
     output_forecast_to_blob(forecast_df=forecast_df)
@@ -144,14 +144,14 @@ def compare_models_performance(
     return model_suggestions
 
 
-def run_forecast_with_suggested_models(
+def run_forecast_with_all_models(
     input_df: pd.DataFrame,
     model_suggestions: pd.DataFrame,
     models: list[ForecastModel],
     months_to_forecast: int,
     start_month: datetime.date,
 ) -> pd.DataFrame:
-    """Generate forecast for a future period with the better performed models for each combination.
+    """Generate forecast for a future period with all models for each combination.
 
     Args:
         input_df (pd.DataFrame): A dataframe of prepared spend data.
@@ -164,28 +164,35 @@ def run_forecast_with_suggested_models(
         pd.DataFrame: A dataframe of forecasted future spending.
     """
 
-    logger.debug("Generating forecast with suggested models...")
+    logger.debug("Generating forecast with all models...")
 
-    model_chooser: dict[str, ForecastModel] = {model.name: model for model in models}
-    spend_data_with_model_suggestions = input_df.merge(
-        right=model_suggestions, on=["Category", "MarketSector"]
-    )
-
+    # Generate forecast with all models
     output_dfs = []
-    for model_suggested, spend_data in spend_data_with_model_suggestions.groupby(
-        "Model Suggested"
-    ):
-        model_suggested = str(model_suggested)
-
-        forecast = model_chooser[model_suggested].create_forecast(
-            input_df=spend_data,
+    for model in models:
+        forecast = model.create_forecast(
+            input_df=input_df,
             months_to_forecast=months_to_forecast,
             start_month=start_month,
         )
-        forecast["Model used"] = model_suggested
+        forecast = forecast.rename(columns={"ForecastSpend": f"{model.name}_Forecast"})
         output_dfs.append(forecast)
 
-    output_df = pd.concat(output_dfs)
+    # Combine the forecast into one dataframe
+    output_df = output_dfs[0]
+    for other_output in output_dfs[1:]:
+        output_df = output_df.merge(
+            other_output, how="outer", on=["Category", "MarketSector", "SpendMonth"]
+        )
+    output_df = output_df.merge(
+        right=model_suggestions, on=["Category", "MarketSector"], how="left"
+    )
+
+    # Copy the forecasted amount from the suggested model to 'Suggested Forecast' column
+    for model_name in pd.unique(output_df["Model Suggested"]):
+        output_df.loc[
+            (output_df["Model Suggested"]) == model_name, "Suggested Forecast"
+        ] = output_df[f"{model_name}_Forecast"]
+
     logger.debug("Finished generating forecast.")
 
     return output_df
