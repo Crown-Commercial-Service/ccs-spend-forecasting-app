@@ -132,10 +132,7 @@ class SarimaModel(ForecastModel):
                 except Exception as err:
                     logger.error(f"Error while searching for hyperparameter: {err}")
                     continue
-            elif (
-                search_hyperparameters
-                and combination not in self._hyperparameters_cache
-            ):
+            elif search_hyperparameters and combination in self._hyperparameters_cache:
                 # already did a search for this combination in current job session. will reuse it to create forecast
                 params = self._hyperparameters_cache[combination]
                 logger.debug(
@@ -326,12 +323,22 @@ class SarimaModel(ForecastModel):
         s = default["seasonal_period"]
 
         if default["d"] == "auto":
-            d = find_integration_order(spend)
+            try:
+                d = find_integration_order(spend)
+            except Exception as err:
+                logger.error(f"Error while trying to find integration order: {err}")
+                d = 0
         else:
             d = default["d"]
 
         if default["seasonal_D"] == "auto":
-            D = find_seasonal_integration_order(spend, seasonal_order=s)
+            try:
+                D = find_seasonal_integration_order(spend, seasonal_order=s)
+            except Exception as err:
+                logger.error(
+                    f"Error while trying to find seasonal integration order: {err}"
+                )
+                D = 0
         else:
             D = default["seasonal_D"]
 

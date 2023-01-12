@@ -50,35 +50,34 @@ def create_models_comparison(
 
     aggregated_spend = prepare_data(input_df=input_df, models=models)
 
-    unique_dates = aggregated_spend[date_column].unique()
-    dataset_size = len(unique_dates)
+    comparison_tables_for_each_combination = []
 
-    train_size = int(dataset_size * train_ratio)
-    prediction_size = dataset_size - train_size
+    # Loop through each combination and create the forecast comparison separately
+    for _, category_sector_spend in aggregated_spend.groupby(columns_to_consider):
 
-    train_period = unique_dates[0:train_size]
+        dataset_size = len(category_sector_spend)
+        train_size = int(dataset_size * train_ratio)
+        prediction_size = dataset_size - train_size
 
-    prediction_period = unique_dates[train_size:]
+        df_for_training = category_sector_spend[0:train_size]
+        df_for_comparing = category_sector_spend[train_size:]
+        forecast_start_month = df_for_comparing[date_column].min()
 
-    # Separate the data to two portions, one for training the model and one for comparison.
-    # The data for comparison will be named as "comparison_table" from this point
-    df_for_training = aggregated_spend[aggregated_spend[date_column].isin(train_period)]
-    comparison_table = aggregated_spend[
-        aggregated_spend[date_column].isin(prediction_period)
-    ].reset_index(drop=True)
+        # Loop through a list of models and populate the table with forecast and model accuracy
+        for model in models:
+            df_for_comparing = fill_in_model_forecast(
+                df_for_training=df_for_training,
+                comparison_table=df_for_comparing,
+                model=model,
+                months_to_forecast=prediction_size,
+                start_month=forecast_start_month,
+            )
 
-    forecast_start_month = prediction_period[0]
+        comparison_tables_for_each_combination.append(df_for_comparing)
 
-    # Loop through a list of models and populate the table with forecast and model accuracy
+    comparison_table = pd.concat(comparison_tables_for_each_combination)
+
     for model in models:
-        comparison_table = fill_in_model_forecast(
-            df_for_training=df_for_training,
-            comparison_table=comparison_table,
-            model=model,
-            months_to_forecast=prediction_size,
-            start_month=forecast_start_month,
-        )
-
         comparison_table = fill_in_model_accuracy(
             comparison_table=comparison_table, model=model
         )

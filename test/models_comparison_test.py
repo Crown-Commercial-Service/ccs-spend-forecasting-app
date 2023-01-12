@@ -23,6 +23,7 @@ class ModelComparisonTest(TestCase):
                 'MarketSector': ['Health'] * 6,
                 'EvidencedSpend': [1000.0, 1200.0, 800.0, 1000.0, 1200.0, 800.0]
             }
+            # fmt: on
         )
 
         models = [
@@ -48,6 +49,7 @@ class ModelComparisonTest(TestCase):
                 'Model Suggested': ['Model B', 'Model B'],
                 'MAPE of Suggested Model': [0.05, 0.05]
             }
+            # fmt: on
         )
 
         actual = create_models_comparison(
@@ -90,6 +92,7 @@ class ModelComparisonTest(TestCase):
                 'MarketSector': ['Health'] * 12 + ['Education']  * 12 + ['Health'] * 12 + ['Education']  * 12,
                 'EvidencedSpend': [1000 + 100 * random() for _ in range(12)] + [2000 + 100 * random() for _ in range(12)] + [3000 + 100 * random() for _ in range(12)] + [4000 + 100 * random() for _ in range(12)]
             }
+            # fmt: on
         )
 
         models = [
@@ -153,6 +156,7 @@ class ModelComparisonTest(TestCase):
                 # Some months got 0 spending or NaN spending
                 'EvidencedSpend': [1000 + 100 * random() for _ in range(4)] + [np.NaN] + [0] + [1000 + 100 * random() for _ in range(4)] + [0]
             }
+            # fmt: on
         )
 
         models = [
@@ -314,4 +318,55 @@ class ModelComparisonTest(TestCase):
         expected = True
         actual = output["Model A Forecast"].isnull().all()
 
+        assert expected == actual
+
+    def test_handle_combinations_with_different_data_size(self):
+        """Test for handling input data with combinations having very different data size and time periods"""
+
+        # Test data with Category A got 36 rows, Category B got 12 rows, and the time span of them does not align well
+        # Category got data from 2018 Jan to 2020 Dec, Category B got data from 2020 July to Dec, then from 2022 Jan to Jun
+        input_df = pd.DataFrame(
+            # fmt: off
+            data={
+                'SpendMonth': [datetime.date(year, month, 1) for year in range(2018, 2018 + 3) for month in range(1, 1 + 12)] + [datetime.date(2020, month, 1) for month in range(7, 12 + 1)] + [datetime.date(2022, month, 1) for month in range(1, 6 + 1)],
+                'Category': ['Test Category A'] * 36 + ['Test Category B'] * 12,
+                'MarketSector': ['Health'] * 48,
+                'EvidencedSpend': [1000.0] * 48
+            }
+            # fmt: on
+        )
+
+        models = [
+            create_mock_model(name="Model A", randomness=0.8),
+            create_mock_model(name="Model B", randomness=0.05),
+        ]
+
+        comparison_table = create_models_comparison(
+            input_df=input_df,
+            train_ratio=0.9,
+            models=models,
+        )
+
+        print(comparison_table["SpendMonth"], "<--- this")
+
+        # check that we got 36 * (1 - 0.9) = 4 rows for Category A
+        category_A_results = comparison_table[
+            comparison_table["Category"] == "Test Category A"
+        ]
+        assert len(category_A_results) == 4
+
+        # check that for Category A, the forecast are compared with last 4 month's actual data of Category A
+        expected = [datetime.date(2020, month, 1) for month in (9, 10, 11, 12)]
+        actual = list(category_A_results["SpendMonth"])
+        assert expected == actual
+
+        # check that we got 12 * (1 - 0.9) = 2 rows for Category B
+        category_B_results = comparison_table[
+            comparison_table["Category"] == "Test Category B"
+        ]
+        assert len(category_B_results) == 2
+
+        # check that for Category B, the forecast are compared with last 2 month's actual data of Category B
+        expected = [datetime.date(2022, month, 1) for month in (5, 6)]
+        actual = list(category_B_results["SpendMonth"])
         assert expected == actual
