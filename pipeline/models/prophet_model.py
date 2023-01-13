@@ -210,10 +210,10 @@ class ProphetModel(ForecastModel):
         changepoint_prior_scale_values = [0.001, 0.01, 0.1, 0.5]
         seasonality_prior_scale_values = [0.01, 0.1, 1.0, 10.0]
 
-        train_size = int(len(category_sector_spend) * 0.9)
+        # train_size = int(len(category_sector_spend) * 0.9)
 
-        train_data = category_sector_spend.iloc[:train_size]
-        test_data = category_sector_spend.iloc[train_size:]
+        # train_data = category_sector_spend.iloc[:train_size]
+        # test_data = category_sector_spend.iloc[train_size:]
 
         all_mape = []
 
@@ -227,11 +227,11 @@ class ProphetModel(ForecastModel):
                 seasonality_prior_scale=seasonality_prior_scale,
             )
             model.add_country_holidays(country_name="UK")
-            model.fit(train_data)
+            model.fit(category_sector_spend)
 
-            forecast = model.predict(test_data)
+            forecast = model.predict(category_sector_spend[["ds"]])
             mape = mean_absolute_percentage_error(
-                y_true=test_data["y"], y_pred=forecast["yhat"]
+                y_true=category_sector_spend["y"], y_pred=forecast["yhat"]
             )
             all_mape.append([changepoint_prior_scale, seasonality_prior_scale, mape])
 
