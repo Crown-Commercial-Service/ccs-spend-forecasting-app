@@ -102,7 +102,7 @@ def model_choices() -> list[ForecastModel]:
 
     logger.debug("Instantiating models...")
 
-    sarima = SarimaModel(search_hyperparameters=False)
+    sarima = SarimaModel(search_hyperparameters=True)
     arima = ArimaModel(search_hyperparameters=True)
     arma = ArmaModel(search_hyperparameters=True)
     prophet = ProphetModel()
