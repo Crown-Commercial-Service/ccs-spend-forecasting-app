@@ -1,8 +1,9 @@
-import datetime
-import pandas as pd
-from pyspark.sql import functions as F
 import os
 import sys
+import datetime
+import itertools
+
+import pandas as pd
 
 # add /dbfs/ to path so that import statements works on databricks
 if "DATABRICKS_RUNTIME_VERSION" in os.environ:
@@ -20,6 +21,7 @@ from pipeline.utils import (
     connect_spark_to_blob_storage,
     load_latest_blob_to_pyspark,
     save_pandas_dataframe_to_blob,
+    load_csv_from_blob_to_pandas,
 )
 
 logger = get_logger()
@@ -64,27 +66,38 @@ def fetch_data_from_blob() -> pd.DataFrame:
     logger.debug("loading spend data from Azure blob storage...")
 
     connect_spark_to_blob_storage()
-    table_name = "SpendDataFilledMissingMonth"
-    sdf = load_latest_blob_to_pyspark(table_name)
+    spend_data = load_latest_blob_to_pyspark("SpendDataFilledMissingMonth")
 
-    # select the combinations to make forecast for.
-    category_list = [
-        "Workforce Health & Education",
-        "Document Management & Logistics",
-        "Financial Services",
-        "Network Services",
-    ]
-    market_sector_list = [
-        "Health",
-        "Education",
-        "Local Community and Housing",
-        "Government Policy",
-    ]
+    active_combinations = load_csv_from_blob_to_pandas("ActiveCombinations")
 
-    df = sdf.filter(
-        (F.col("Category").isin(category_list))
-        & (F.col("MarketSector").isin(market_sector_list))
-    ).toPandas()
+    ## For development purpose, here we limit the active combinations to top 10 only.
+    ## Remove the following line to run forecast for all active combinations
+    active_combinations = active_combinations.iloc[:10]
+
+    ## For development purpose. Uncomment the following lines to manually choose what combinations to use.
+    # category_list = [
+    #     "Workforce Health & Education",
+    #     "Document Management & Logistics",
+    #     "Financial Services",
+    #     "Network Services",
+    # ]
+    # market_sector_list = [
+    #     "Health",
+    #     "Education",
+    #     "Local Community and Housing",
+    #     "Government Policy",
+    # ]
+    # active_combinations = pd.DataFrame(data=itertools.product(category_list, market_sector_list), columns=['Category', 'MarketSector'])
+
+    combinations = spend_data.sparkSession.createDataFrame(active_combinations)
+    column_names = [str(column_name) for column_name in active_combinations.columns]
+    filtered_spend = (
+        spend_data.alias("spend")
+        .join(combinations, on=column_names, how="inner")
+        .select("spend.*")
+    )
+
+    df = filtered_spend.toPandas()
 
     # sum up the spend data by month, so that for each combination, only one row for one month
     input_df = df.groupby(
@@ -102,7 +115,7 @@ def model_choices() -> list[ForecastModel]:
 
     logger.debug("Instantiating models...")
 
-    sarima = SarimaModel(search_hyperparameters=True)
+    sarima = SarimaModel(search_hyperparameters=False)
     arima = ArimaModel(search_hyperparameters=True)
     arma = ArmaModel(search_hyperparameters=True)
     prophet = ProphetModel()
