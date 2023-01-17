@@ -7,7 +7,11 @@ def add_missing_months(
     amount_column: str = "EvidencedSpend",
     columns_to_consider: list[str] = [],
 ) -> DataFrame:
-    """Receive a dataframe and return a new dataframe with zero-amount placeholder rows added for every missing months
+    """
+    Receive a dataframe and return a new dataframe with zero-amount placeholder rows added for every missing months.
+    The latest date across all combination is taken as the `latest_month`.
+    For every combinations, for the period from the earliest record in until this `latest_month`,
+    if any month in between doesn't have any spending, a placeholder record of amount = 0 will be inserted.
 
     Args:
         df (DataFrame): Input Dataframe
@@ -21,14 +25,21 @@ def add_missing_months(
 
     input_df_columns = df.columns
 
+    latest_month_row = df.select(F.max(date_column)).first()
+    if not latest_month_row:
+        raise ValueError(f"the column {date_column} is missing from input data")
+    latest_month = latest_month_row[0]
+
     all_months_combinations = (
         df.groupBy(columns_to_consider)
-        .agg(F.min(date_column).alias("minMonth"), F.max(date_column).alias("maxMonth"))
+        .agg(
+            F.min(date_column).alias("minMonth"), F.lit(latest_month).alias("maxMonth")
+        )
         .select(
             *columns_to_consider,
             F.expr("sequence(minMonth, maxMonth, interval 1 month)").alias(
                 "possible_months"
-            )
+            ),
         )
         .withColumn(date_column, F.explode("possible_months"))
         .drop("possible_months")

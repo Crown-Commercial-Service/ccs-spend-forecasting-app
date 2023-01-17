@@ -112,6 +112,7 @@ class FillMissingMonths(ReusableSparkTestCase):
 
         expected = self.spark.createDataFrame(
             # fmt: off
+            # the output data should fill in zero months for every category until (2014, 4, 1).
             data=[
                 Row( SpendMonth=datetime.date(2013, 4, 1), MarketSector="Culture, Media and Sport", Pillar="Corporate Solutions", Category="Document Management & Logistics", SubCategory="MFD & Record Management", EvidencedSpend=1234.56,),
                 Row( SpendMonth=datetime.date(2013, 5, 1), MarketSector="Culture, Media and Sport", Pillar="Corporate Solutions", Category="Document Management & Logistics", SubCategory="MFD & Record Management", EvidencedSpend=1111.22,),
@@ -121,16 +122,21 @@ class FillMissingMonths(ReusableSparkTestCase):
                 Row( SpendMonth=datetime.date(2013, 9, 1), MarketSector="Culture, Media and Sport", Pillar=None, Category="Document Management & Logistics", SubCategory=None, EvidencedSpend=0.0,),
                 Row( SpendMonth=datetime.date(2013, 10, 1), MarketSector="Culture, Media and Sport", Pillar=None, Category="Document Management & Logistics", SubCategory=None, EvidencedSpend=0.0,),
                 Row( SpendMonth=datetime.date(2013, 11, 1), MarketSector="Culture, Media and Sport", Pillar="Corporate Solutions", Category="Document Management & Logistics", SubCategory="MFD & Record Management", EvidencedSpend=1234.56,),
+                Row( SpendMonth=datetime.date(2013, 12, 1), MarketSector="Culture, Media and Sport", Pillar=None, Category="Document Management & Logistics", SubCategory=None, EvidencedSpend=0.0,),
+                Row( SpendMonth=datetime.date(2014, 1, 1), MarketSector="Culture, Media and Sport", Pillar=None, Category="Document Management & Logistics", SubCategory=None, EvidencedSpend=0.0,),
+                Row( SpendMonth=datetime.date(2014, 2, 1), MarketSector="Culture, Media and Sport", Pillar=None, Category="Document Management & Logistics", SubCategory=None, EvidencedSpend=0.0,),
+                Row( SpendMonth=datetime.date(2014, 3, 1), MarketSector="Culture, Media and Sport", Pillar=None, Category="Document Management & Logistics", SubCategory=None, EvidencedSpend=0.0,),
+                Row( SpendMonth=datetime.date(2014, 4, 1), MarketSector="Culture, Media and Sport", Pillar=None, Category="Document Management & Logistics", SubCategory=None, EvidencedSpend=0.0,),
+
                 Row( SpendMonth=datetime.date(2013, 3, 1), MarketSector="Health", Pillar="People", Category="Professional Services", SubCategory="Consultancy", EvidencedSpend=1234.56,),
                 Row( SpendMonth=datetime.date(2013, 4, 1), MarketSector="Health", Pillar="People", Category="Professional Services", SubCategory="Consultancy", EvidencedSpend=1111.22,),
                 Row( SpendMonth=datetime.date(2013, 5, 1), MarketSector="Health", Pillar=None, Category="Professional Services", SubCategory=None, EvidencedSpend=0.0,),
                 Row( SpendMonth=datetime.date(2013, 6, 1), MarketSector="Health", Pillar=None, Category="Professional Services", SubCategory=None, EvidencedSpend=0.0,),
-                # Function should not depends on order of input rows. A row of 2013 07 already exist at the bottom,  so it shouldn't fill a 2013 07 here.
+                Row( SpendMonth=datetime.date(2013, 7, 1), MarketSector="Health", Pillar="People", Category="Professional Services", SubCategory="Consultancy", EvidencedSpend=1111.22,),
                 Row( SpendMonth=datetime.date(2013, 8, 1), MarketSector="Health", Pillar=None, Category="Professional Services", SubCategory=None, EvidencedSpend=0.0,),
                 Row( SpendMonth=datetime.date(2013, 9, 1), MarketSector="Health", Pillar=None, Category="Professional Services", SubCategory=None, EvidencedSpend=0.0,),
                 Row( SpendMonth=datetime.date(2013, 10, 1), MarketSector="Health", Pillar=None, Category="Professional Services", SubCategory=None, EvidencedSpend=0.0,),
                 Row( SpendMonth=datetime.date(2013, 11, 1), MarketSector="Health", Pillar="People", Category="Professional Services", SubCategory="Consultancy", EvidencedSpend=1234.56,),
-                Row( SpendMonth=datetime.date(2013, 7, 1), MarketSector="Health", Pillar="People", Category="Professional Services", SubCategory="Consultancy", EvidencedSpend=1111.22,),
                 Row( SpendMonth=datetime.date(2013, 12, 1), MarketSector="Health", Pillar="People", Category="Professional Services", SubCategory="Legal Services", EvidencedSpend=1234.56,),
                 Row( SpendMonth=datetime.date(2014, 1, 1), MarketSector="Health", Pillar=None, Category="Professional Services", SubCategory=None, EvidencedSpend=0.0,),
                 Row( SpendMonth=datetime.date(2014, 2, 1), MarketSector="Health", Pillar="People", Category="Professional Services", SubCategory="Legal Services", EvidencedSpend=1111.22,),
@@ -160,24 +166,37 @@ class FillMissingMonths(ReusableSparkTestCase):
 
         expected = self.spark.createDataFrame(
             # fmt: off
+            # the output data should fill in zero months for every subcategory until (2014, 4, 1)
             data=[
                 Row( SpendMonth=datetime.date(2013, 4, 1), MarketSector="Culture, Media and Sport", Pillar="Corporate Solutions", Category="Document Management & Logistics", SubCategory="MFD & Record Management", EvidencedSpend=1234.56,),
                 Row( SpendMonth=datetime.date(2013, 5, 1), MarketSector="Culture, Media and Sport", Pillar="Corporate Solutions", Category="Document Management & Logistics", SubCategory="MFD & Record Management", EvidencedSpend=1111.22,),
-                Row( SpendMonth=datetime.date(2013, 6, 1), MarketSector="Culture, Media and Sport", Pillar=None, Category=None, SubCategory="MFD & Record Management", EvidencedSpend=0.0,),
-                Row( SpendMonth=datetime.date(2013, 7, 1), MarketSector="Culture, Media and Sport", Pillar=None, Category=None, SubCategory="MFD & Record Management", EvidencedSpend=0.0,),
-                Row( SpendMonth=datetime.date(2013, 8, 1), MarketSector="Culture, Media and Sport", Pillar=None, Category=None, SubCategory="MFD & Record Management", EvidencedSpend=0.0,),
-                Row( SpendMonth=datetime.date(2013, 9, 1), MarketSector="Culture, Media and Sport", Pillar=None, Category=None, SubCategory="MFD & Record Management", EvidencedSpend=0.0,),
-                Row( SpendMonth=datetime.date(2013, 10, 1), MarketSector="Culture, Media and Sport", Pillar=None, Category=None, SubCategory="MFD & Record Management", EvidencedSpend=0.0,),
+                Row( SpendMonth=datetime.date(2013, 6, 1), MarketSector="Culture, Media and Sport", Pillar=None, Category=None,  SubCategory="MFD & Record Management", EvidencedSpend=0.0),
+                Row( SpendMonth=datetime.date(2013, 7, 1), MarketSector="Culture, Media and Sport", Pillar=None, Category=None,  SubCategory="MFD & Record Management", EvidencedSpend=0.0),
+                Row( SpendMonth=datetime.date(2013, 8, 1), MarketSector="Culture, Media and Sport", Pillar=None, Category=None,  SubCategory="MFD & Record Management", EvidencedSpend=0.0),
+                Row( SpendMonth=datetime.date(2013, 9, 1), MarketSector="Culture, Media and Sport", Pillar=None, Category=None,  SubCategory="MFD & Record Management", EvidencedSpend=0.0),
+                Row( SpendMonth=datetime.date(2013, 10, 1), MarketSector="Culture, Media and Sport", Pillar=None, Category=None,  SubCategory="MFD & Record Management", EvidencedSpend=0.0),
                 Row( SpendMonth=datetime.date(2013, 11, 1), MarketSector="Culture, Media and Sport", Pillar="Corporate Solutions", Category="Document Management & Logistics", SubCategory="MFD & Record Management", EvidencedSpend=1234.56,),
+                Row( SpendMonth=datetime.date(2013, 12, 1), MarketSector="Culture, Media and Sport", Pillar=None, Category=None,  SubCategory="MFD & Record Management", EvidencedSpend=0.0),
+                Row( SpendMonth=datetime.date(2014, 1, 1), MarketSector="Culture, Media and Sport", Pillar=None, Category=None,  SubCategory="MFD & Record Management", EvidencedSpend=0.0),
+                Row( SpendMonth=datetime.date(2014, 2, 1), MarketSector="Culture, Media and Sport", Pillar=None, Category=None,  SubCategory="MFD & Record Management", EvidencedSpend=0.0),
+                Row( SpendMonth=datetime.date(2014, 3, 1), MarketSector="Culture, Media and Sport", Pillar=None, Category=None,  SubCategory="MFD & Record Management", EvidencedSpend=0.0),
+                Row( SpendMonth=datetime.date(2014, 4, 1), MarketSector="Culture, Media and Sport", Pillar=None, Category=None,  SubCategory="MFD & Record Management", EvidencedSpend=0.0),
+
                 Row( SpendMonth=datetime.date(2013, 3, 1), MarketSector="Health", Pillar="People", Category="Professional Services", SubCategory="Consultancy", EvidencedSpend=1234.56,),
                 Row( SpendMonth=datetime.date(2013, 4, 1), MarketSector="Health", Pillar="People", Category="Professional Services", SubCategory="Consultancy", EvidencedSpend=1111.22,),
                 Row( SpendMonth=datetime.date(2013, 5, 1), MarketSector="Health", Pillar=None, Category=None, SubCategory="Consultancy", EvidencedSpend=0.0,),
                 Row( SpendMonth=datetime.date(2013, 6, 1), MarketSector="Health", Pillar=None, Category=None, SubCategory="Consultancy", EvidencedSpend=0.0,),
+                Row( SpendMonth=datetime.date(2013, 7, 1), MarketSector="Health", Pillar="People", Category="Professional Services", SubCategory="Consultancy", EvidencedSpend=1111.22,),
                 Row( SpendMonth=datetime.date(2013, 8, 1), MarketSector="Health", Pillar=None, Category=None, SubCategory="Consultancy", EvidencedSpend=0.0,),
                 Row( SpendMonth=datetime.date(2013, 9, 1), MarketSector="Health", Pillar=None, Category=None, SubCategory="Consultancy", EvidencedSpend=0.0,),
                 Row( SpendMonth=datetime.date(2013, 10, 1), MarketSector="Health", Pillar=None, Category=None, SubCategory="Consultancy", EvidencedSpend=0.0,),
                 Row( SpendMonth=datetime.date(2013, 11, 1), MarketSector="Health", Pillar="People", Category="Professional Services", SubCategory="Consultancy", EvidencedSpend=1234.56,),
-                Row( SpendMonth=datetime.date(2013, 7, 1), MarketSector="Health", Pillar="People", Category="Professional Services", SubCategory="Consultancy", EvidencedSpend=1111.22,),
+                Row( SpendMonth=datetime.date(2013, 12, 1), MarketSector="Health", Pillar=None, Category=None, SubCategory="Consultancy", EvidencedSpend=0.0,),
+                Row( SpendMonth=datetime.date(2014, 1, 1), MarketSector="Health", Pillar=None, Category=None, SubCategory="Consultancy", EvidencedSpend=0.0,),
+                Row( SpendMonth=datetime.date(2014, 2, 1), MarketSector="Health", Pillar=None, Category=None, SubCategory="Consultancy", EvidencedSpend=0.0,),
+                Row( SpendMonth=datetime.date(2014, 3, 1), MarketSector="Health", Pillar=None, Category=None, SubCategory="Consultancy", EvidencedSpend=0.0,),
+                Row( SpendMonth=datetime.date(2014, 4, 1), MarketSector="Health", Pillar=None, Category=None, SubCategory="Consultancy", EvidencedSpend=0.0,),
+
                 Row( SpendMonth=datetime.date(2013, 12, 1), MarketSector="Health", Pillar="People", Category="Professional Services", SubCategory="Legal Services", EvidencedSpend=1234.56,),
                 Row( SpendMonth=datetime.date(2014, 1, 1), MarketSector="Health", Pillar=None, Category=None, SubCategory="Legal Services", EvidencedSpend=0.0,),
                 Row( SpendMonth=datetime.date(2014, 2, 1), MarketSector="Health", Pillar="People", Category="Professional Services", SubCategory="Legal Services", EvidencedSpend=1111.22,),
