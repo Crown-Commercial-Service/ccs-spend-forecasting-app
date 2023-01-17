@@ -390,7 +390,7 @@ def save_pandas_dataframe_to_blob(
         dbutils = get_dbutils()
         dbutils.fs.mkdirs(f"dbfs:/FileStore/{os.path.dirname(filename)}")
 
-        pandas_df.to_csv(f"/dbfs/FileStore/{filename}")
+        pandas_df.to_csv(f"/dbfs/FileStore/{filename}", index=False)
 
         dbutils.fs.mv(f"dbfs:/FileStore/{filename}", full_path)
 
