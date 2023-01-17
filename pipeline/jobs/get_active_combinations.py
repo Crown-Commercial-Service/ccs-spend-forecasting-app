@@ -1,6 +1,13 @@
 from pyspark.sql import DataFrame, functions as F
 import pandas as pd
 import datetime
+import os
+import sys
+
+# add /dbfs/ to path so that import statements works on databricks
+if "DATABRICKS_RUNTIME_VERSION" in os.environ:
+    sys.path.append("/dbfs/")
+
 
 from utils import get_logger
 from pipeline.utils import (
