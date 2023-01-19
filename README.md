@@ -114,7 +114,7 @@ If you are running the jobs on a local machine, ensure that you fill in blob acc
 If you are running the jobs on Azure cloud environment, ensure infrastructures in repo `Crown-Commercial-Service/ccs-spend-forecasting-infra` and `Crown-Commercial-Service/ccs-spend-forecasting-adf` are properly setup already.
 
 #### 1. Fill missing months to spend data
-Related files: [`pipeline/jobs/fill_missing_months.py`, `pipeline/main.py`]
+Related files: [`pipeline/jobs/fill_missing_months.py`]
 
 This job insert dummy records of amount £0 spending into spend data for in-between months that has no spending.
 

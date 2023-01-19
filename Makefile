@@ -11,7 +11,7 @@ lint:
 	poetry run pylint pipeline test
 
 pipeline_fill_missing_months:
-	poetry run python -m pipeline.main
+	poetry run python -m pipeline.jobs.fill_missing_months
 
 pipeline_get_active_combinations:
 	poetry run python -m pipeline.jobs.get_active_combinations

@@ -1,4 +1,19 @@
+import os
+import sys
+
 from pyspark.sql import DataFrame, functions as F
+
+if "DATABRICKS_RUNTIME_VERSION" in os.environ:
+    sys.path.append(
+        "/dbfs/"
+    )  # add /dbfs/ to path so that import statements works on databricks
+
+from pipeline.utils import (
+    connect_spark_to_blob_storage,
+    load_latest_blob_to_pyspark,
+    make_blob_storage_path,
+    save_dataframe_to_blob,
+)
 
 
 def add_missing_months(
@@ -69,13 +84,6 @@ def fill_missing_months_for_transformed_spend(
         container_name (str, optional): The blob container name to retreieve the input file and to save the output blob. Defaults to "".
     """
 
-    from pipeline.utils import (
-        connect_spark_to_blob_storage,
-        load_latest_blob_to_pyspark,
-        make_blob_storage_path,
-        save_dataframe_to_blob,
-    )
-
     connect_spark_to_blob_storage()
     input_df = load_latest_blob_to_pyspark(
         table_name=input_table_name, blob_container_name=container_name
@@ -95,4 +103,14 @@ def fill_missing_months_for_transformed_spend(
         table_name=output_table_name,
         blob_storage_path=output_path,
         overwrite=True,
+    )
+
+
+if __name__ == "__main__":
+    """Run the pipeline process"""
+
+    fill_missing_months_for_transformed_spend(
+        input_table_name="TransformedSpendData",
+        output_table_name="SpendDataFilledMissingMonth",
+        container_name="azp-uks-spend-forecasting-development-transformed",
     )
