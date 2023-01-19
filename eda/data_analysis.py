@@ -1403,7 +1403,9 @@ def model_sarima_arima(df: pd.DataFrame, category: str, sector: str, run: bool =
         plt.show()
 
 
-def model_prophet_sarima_arima(df: pd.DataFrame, category: str, sector: str, run: bool = False):
+def model_prophet_sarima_arima(
+    df: pd.DataFrame, category: str, sector: str, run: bool = False
+):
     """Forecast the data using Prophet and compares it with SARIMA(p,d,q)(P,D,Q)m model and ARIMA(p,d,q) model.
 
     Args:
@@ -2054,7 +2056,9 @@ def main():
     model_arma(aggregated_df, category=category, sector=sector, run=False)
     model_arima(aggregated_df, category=category, sector=sector, run=False)
     model_sarima_arima(aggregated_df, category=category, sector=sector, run=False)
-    model_prophet_sarima_arima(aggregated_df, category=category, sector=sector, run=False)
+    model_prophet_sarima_arima(
+        aggregated_df, category=category, sector=sector, run=False
+    )
     future_forecast = forecast_future_spend(
         df=aggregated_df,
         category=category,
