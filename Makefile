@@ -18,3 +18,6 @@ pipeline_get_active_combinations:
 
 pipeline_run_forecast:
 	poetry run python -m pipeline.jobs.run_forecast_and_output_to_blob
+
+pipeline_save_as_csv:
+	poetry run python -m pipeline.jobs.save_as_csv_for_powerbi
