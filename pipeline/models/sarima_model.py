@@ -93,10 +93,6 @@ class SarimaModel(ForecastModel):
             pd.DataFrame: A dataframe with forecast spend amounts.
         """
 
-        if search_hyperparameters is None:
-            search_hyperparameters = self._search_hyperparameters
-
-        output_df_list = []
         if not isinstance(start_month, datetime.date):
             # if start_month is not a valid date type, replace it with next month from today's date
             today = datetime.date.today()
@@ -109,6 +105,9 @@ class SarimaModel(ForecastModel):
         # prepare data by summing up each month and remove irrelavent columns
         prepared_data = self.prepare_input_data(input_df=input_df)
 
+        output_df_list = []
+
+        # Go through each combination and generate forecast.
         for combination, category_sector_spend in prepared_data.groupby(
             self.columns_to_consider, as_index=False
         ):
@@ -117,10 +116,12 @@ class SarimaModel(ForecastModel):
                 self.date_column, ascending=True
             ).reset_index(drop=True)
 
-            if (
-                search_hyperparameters
-                and combination not in self._hyperparameters_cache
-            ):
+            if not self._search_hyperparameters:
+                # If _search_hyperparameters flag is False, will just use a hardcoded set of params.
+                params = self._default_hyperparameters
+
+            elif combination not in self._hyperparameters_cache:
+                # If _search_hyperparameters flag is True and this combination wasn't searched before, will run a grid search.
                 logger.debug(
                     f"{self.name}: Start searching for best hyperparameters for {combination}..."
                 )
@@ -132,15 +133,13 @@ class SarimaModel(ForecastModel):
                 except Exception as err:
                     logger.error(f"Error while searching for hyperparameter: {err}")
                     continue
-            elif search_hyperparameters and combination in self._hyperparameters_cache:
-                # already did a search for this combination in current job session. will reuse it to create forecast
+            else:
+                # If _search_hyperparameters flag is True and already did a grid search for this combination in current job session,
+                # will reuse the best params to create forecast
                 params = self._hyperparameters_cache[combination]
                 logger.debug(
                     f"{self.name}: Reuse the hyperparameters {params} for {combination}..."
                 )
-            else:
-                # If find_hyperparameters is false, will use a hardcoded set of params.
-                params = self._default_hyperparameters
 
             logger.debug(f"Generating forecast for {combination}...")
 
@@ -154,6 +153,7 @@ class SarimaModel(ForecastModel):
             )
             output_df_list.append(forecast_df)
 
+        # combine the forecast for all combinations into one dataframe
         output_df = pd.concat(output_df_list)
 
         return output_df
@@ -210,7 +210,7 @@ class SarimaModel(ForecastModel):
         start_month: datetime.date,
         months_to_forecast: int,
     ) -> pd.DataFrame:
-        """Create SARIMA model forecast with a given set of hyper parameters for one particular combination.
+        """Create forecast with a given set of hyper parameters for one particular combination.
 
         Args:
             category_sector_spend (pd.DataFrame): Spend data under one particular combination. Assumed to be sorted by date in asc order, with only one row per month.
@@ -240,11 +240,19 @@ class SarimaModel(ForecastModel):
             simple_differencing=False,
         )
 
-        # Fit the model and get prediction.
-        sarima_model_fit = sarima_model.fit(disp=False)
-        sarima_pred = sarima_model_fit.get_prediction(
-            start=0, end=total_number_of_months
-        ).predicted_mean
+        # Fit the model and get forecast.
+        try:
+            sarima_model_fit = sarima_model.fit(disp=False)
+            sarima_pred = sarima_model_fit.get_prediction(
+                start=0, end=total_number_of_months
+            ).predicted_mean
+        except Exception as err:
+            # If the model raise exception, log the error, fill the forecast column with NaN
+            logger.error(f"Exception raised when trying to create forecast {err}")
+            logger.error(
+                f"Model name: {self.name}, combinations: {category_sector_spend.head(1)[self.columns_to_consider]}"
+            )
+            sarima_pred = pd.Series(np.NaN, index=range(total_number_of_months + 1))
 
         # As prediction came out as a non-labelled list of values, add dates to the output of model
         forecast_with_dates = sarima_pred.to_frame(name="ForecastSpend")
@@ -343,17 +351,9 @@ class SarimaModel(ForecastModel):
             D = default["seasonal_D"]
 
         # check params are valid int or int range before go on to searching.
-        def is_param_valid(param) -> bool:
-            if isinstance(param, int):
-                return True
-            if isinstance(param, Iterable) and all(
-                isinstance(elem, int) for elem in param
-            ):
-                return True
-            return False
 
         for param in (ps, qs, Ps, Qs, s, d, D):
-            if not is_param_valid(param):
+            if not self.is_param_valid(param):
                 raise ValueError(
                     f"All hyperparameters should be either int or a range of int. Got: {(ps, qs, Ps, Qs, s, d, D)}"
                 )
@@ -384,7 +384,8 @@ class SarimaModel(ForecastModel):
         sarima_model_fit = sarima_model.fit(disp=False)
         logger.debug(f"Model fit summary:\n{sarima_model_fit.summary()}")
 
-        # Uncomment below code to view diagnostic graphs when troubleshooting.
+        # For development purpose.
+        # Uncomment below codes to view diagnostic graphs for troubleshooting.
         # try:
         #     sarima_model_fit.plot_diagnostics(figsize=(10, 8))
         # except Exception as e:
@@ -399,3 +400,10 @@ class SarimaModel(ForecastModel):
         # )
 
         return {"order": order, "seasonal_order": seasonal_order}
+
+    def is_param_valid(self, param) -> bool:
+        if isinstance(param, int):
+            return True
+        if isinstance(param, Iterable) and all(isinstance(elem, int) for elem in param):
+            return True
+        return False

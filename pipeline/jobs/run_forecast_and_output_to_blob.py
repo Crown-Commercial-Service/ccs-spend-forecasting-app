@@ -70,10 +70,6 @@ def fetch_data_from_blob() -> pd.DataFrame:
 
     active_combinations = load_csv_from_blob_to_pandas("ActiveCombinations")
 
-    ## For development purpose, here we limit the active combinations to top 10 only.
-    ## Remove the following line to run forecast for all active combinations
-    active_combinations = active_combinations.iloc[:10]
-
     ## For development purpose. Uncomment the following lines to manually choose what combinations to use.
     # category_list = [
     #     "Workforce Health & Education",
