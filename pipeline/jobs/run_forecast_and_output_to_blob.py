@@ -22,6 +22,7 @@ from pipeline.utils import (
     load_latest_blob_to_pyspark,
     save_pandas_dataframe_to_blob,
     load_csv_from_blob_to_pandas,
+    suppress_unwanted_warnings,
 )
 
 logger = get_logger()
@@ -32,12 +33,14 @@ def main():
 
     It will execute the following tasks:
     1. Fetch latest spend data from Azure blob storage
-    2. Create 3 forecast models (SARIMA/ARIMA/ARMA) and compare their performance for each combination, base on the past spend data
-    3. Create actual forecast of a future period using the models which performed better for each combination
+    2. Create 4 forecast models (SARIMA/ARIMA/ARMA/Prophet) and compare their performance for each combination, base on the past spend data.
+    3. Create forecast with each models, and also add a column of "suggested forecast" which is given by the model that performed best in each combination.
     4. Output the forecast to blob storage.
     """
     input_df = fetch_data_from_blob()
     models = model_choices()
+
+    suppress_unwanted_warnings()
     model_suggestions = compare_models_performance(input_df, models=models)
 
     today = datetime.date.today()
@@ -69,6 +72,9 @@ def fetch_data_from_blob() -> pd.DataFrame:
     spend_data = load_latest_blob_to_pyspark("SpendDataFilledMissingMonth")
 
     active_combinations = load_csv_from_blob_to_pandas("ActiveCombinations")
+
+    # Limit to top 3 combination for temporary demostration purpose.
+    active_combinations = active_combinations.iloc[:3]
 
     ## For development purpose. Uncomment the following lines to manually choose what combinations to use.
     # category_list = [
@@ -111,7 +117,7 @@ def model_choices() -> list[ForecastModel]:
 
     logger.debug("Instantiating models...")
 
-    sarima = SarimaModel(search_hyperparameters=False)
+    sarima = SarimaModel(search_hyperparameters=True)
     arima = ArimaModel(search_hyperparameters=True)
     arma = ArmaModel(search_hyperparameters=True)
     prophet = ProphetModel()
