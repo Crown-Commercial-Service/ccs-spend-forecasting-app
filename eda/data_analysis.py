@@ -129,7 +129,7 @@ def aggregate_spend(df: pd.DataFrame) -> pd.DataFrame:
         df: Input DataFrame
 
     Returns:
-        DataFrame to be used t
+        DataFrame after aggregating by Month, Category and MarketSector
 
     """
     return df.groupby(["SpendMonth", "Category", "MarketSector"], as_index=False).agg(
@@ -1100,8 +1100,8 @@ def model_arima(df: pd.DataFrame, category: str, sector: str, run: bool = False)
         plt.show()
 
 
-def model_sarima(df: pd.DataFrame, category: str, sector: str, run: bool = False):
-    """Forecast the data using SARIMA(p,d,q)(P,D,Q)m model.
+def model_sarima_arima(df: pd.DataFrame, category: str, sector: str, run: bool = False):
+    """Forecast the data using SARIMA(p,d,q)(P,D,Q)m model and compares it with ARIMA(p,d,q) model.
 
     Args:
         df: DataFrame containing data
@@ -1403,8 +1403,10 @@ def model_sarima(df: pd.DataFrame, category: str, sector: str, run: bool = False
         plt.show()
 
 
-def model_prophet(df: pd.DataFrame, category: str, sector: str, run: bool = False):
-    """Forecast the data using Prophet.
+def model_prophet_sarima_arima(
+    df: pd.DataFrame, category: str, sector: str, run: bool = False
+):
+    """Forecast the data using Prophet and compares it with SARIMA(p,d,q)(P,D,Q)m model and ARIMA(p,d,q) model.
 
     Args:
         df: DataFrame containing data
@@ -2053,8 +2055,10 @@ def main():
     is_spend_random_walk(aggregated_df, category=category, sector=sector, run=False)
     model_arma(aggregated_df, category=category, sector=sector, run=False)
     model_arima(aggregated_df, category=category, sector=sector, run=False)
-    model_sarima(aggregated_df, category=category, sector=sector, run=False)
-    model_prophet(aggregated_df, category=category, sector=sector, run=False)
+    model_sarima_arima(aggregated_df, category=category, sector=sector, run=False)
+    model_prophet_sarima_arima(
+        aggregated_df, category=category, sector=sector, run=False
+    )
     future_forecast = forecast_future_spend(
         df=aggregated_df,
         category=category,
