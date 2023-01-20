@@ -1,8 +1,9 @@
-import datetime
-import pandas as pd
-from pyspark.sql import functions as F
 import os
 import sys
+import datetime
+import itertools
+
+import pandas as pd
 
 # add /dbfs/ to path so that import statements works on databricks
 if "DATABRICKS_RUNTIME_VERSION" in os.environ:
@@ -10,15 +11,17 @@ if "DATABRICKS_RUNTIME_VERSION" in os.environ:
 
 
 from utils import get_logger
-from pipeline.jobs.sarima_model import SarimaModel
-from pipeline.jobs.arima_model import ArimaModel
-from pipeline.jobs.arma_model import ArmaModel
-from pipeline.jobs.forecast_model import ForecastModel
+from pipeline.models.sarima_model import SarimaModel
+from pipeline.models.arima_model import ArimaModel
+from pipeline.models.arma_model import ArmaModel
+from pipeline.models.prophet_model import ProphetModel
+from pipeline.models.forecast_model import ForecastModel
 from pipeline.jobs.models_comparison import create_models_comparison
 from pipeline.utils import (
     connect_spark_to_blob_storage,
     load_latest_blob_to_pyspark,
     save_pandas_dataframe_to_blob,
+    load_csv_from_blob_to_pandas,
 )
 
 logger = get_logger()
@@ -44,11 +47,11 @@ def main():
         else today.replace(year=today.year + 1, month=1, day=1)
     )
 
-    forecast_df = run_forecast_with_suggested_models(
+    forecast_df = run_forecast_with_all_models(
         input_df=input_df,
         model_suggestions=model_suggestions,
         models=models,
-        months_to_forecast=12,
+        months_to_forecast=24,
         start_month=next_month,
     )
     output_forecast_to_blob(forecast_df=forecast_df)
@@ -63,27 +66,38 @@ def fetch_data_from_blob() -> pd.DataFrame:
     logger.debug("loading spend data from Azure blob storage...")
 
     connect_spark_to_blob_storage()
-    table_name = "SpendDataFilledMissingMonth"
-    sdf = load_latest_blob_to_pyspark(table_name)
+    spend_data = load_latest_blob_to_pyspark("SpendDataFilledMissingMonth")
 
-    # select the combinations to make forecast for.
-    category_list = [
-        "Workforce Health & Education",
-        "Document Management & Logistics",
-        "Financial Services",
-        "Network Services",
-    ]
-    market_sector_list = [
-        "Health",
-        "Education",
-        "Local Community and Housing",
-        "Government Policy",
-    ]
+    active_combinations = load_csv_from_blob_to_pandas("ActiveCombinations")
 
-    df = sdf.filter(
-        (F.col("Category").isin(category_list))
-        & (F.col("MarketSector").isin(market_sector_list))
-    ).toPandas()
+    ## For development purpose, here we limit the active combinations to top 10 only.
+    ## Remove the following line to run forecast for all active combinations
+    active_combinations = active_combinations.iloc[:10]
+
+    ## For development purpose. Uncomment the following lines to manually choose what combinations to use.
+    # category_list = [
+    #     "Workforce Health & Education",
+    #     "Document Management & Logistics",
+    #     "Financial Services",
+    #     "Network Services",
+    # ]
+    # market_sector_list = [
+    #     "Health",
+    #     "Education",
+    #     "Local Community and Housing",
+    #     "Government Policy",
+    # ]
+    # active_combinations = pd.DataFrame(data=itertools.product(category_list, market_sector_list), columns=['Category', 'MarketSector'])
+
+    combinations = spend_data.sparkSession.createDataFrame(active_combinations)
+    column_names = [str(column_name) for column_name in active_combinations.columns]
+    filtered_spend = (
+        spend_data.alias("spend")
+        .join(combinations, on=column_names, how="inner")
+        .select("spend.*")
+    )
+
+    df = filtered_spend.toPandas()
 
     # sum up the spend data by month, so that for each combination, only one row for one month
     input_df = df.groupby(
@@ -101,15 +115,12 @@ def model_choices() -> list[ForecastModel]:
 
     logger.debug("Instantiating models...")
 
-    sarima = SarimaModel(search_hyperparameters=True)
+    sarima = SarimaModel(search_hyperparameters=False)
     arima = ArimaModel(search_hyperparameters=True)
     arma = ArmaModel(search_hyperparameters=True)
+    prophet = ProphetModel()
 
-    return [
-        sarima,
-        arima,
-        arma,
-    ]
+    return [sarima, arima, arma, prophet]
 
 
 def compare_models_performance(
@@ -132,7 +143,12 @@ def compare_models_performance(
         input_df=input_df, train_ratio=0.9, models=models
     )
 
-    columns_to_extract = ["Category", "MarketSector", "Model Suggested"]
+    columns_to_extract = [
+        "Category",
+        "MarketSector",
+        "MAPE of Suggested Model",
+        "Model Suggested",
+    ]
     model_suggestions = comparison_table[columns_to_extract].drop_duplicates()
 
     logger.debug("Comparison result:")
@@ -141,14 +157,14 @@ def compare_models_performance(
     return model_suggestions
 
 
-def run_forecast_with_suggested_models(
+def run_forecast_with_all_models(
     input_df: pd.DataFrame,
     model_suggestions: pd.DataFrame,
     models: list[ForecastModel],
     months_to_forecast: int,
     start_month: datetime.date,
 ) -> pd.DataFrame:
-    """Generate forecast for a future period with the better performed models for each combination.
+    """Generate forecast for a future period with all models for each combination.
 
     Args:
         input_df (pd.DataFrame): A dataframe of prepared spend data.
@@ -161,28 +177,35 @@ def run_forecast_with_suggested_models(
         pd.DataFrame: A dataframe of forecasted future spending.
     """
 
-    logger.debug("Generating forecast with suggested models...")
+    logger.debug("Generating forecast with all models...")
 
-    model_chooser: dict[str, ForecastModel] = {model.name: model for model in models}
-    spend_data_with_model_suggestions = input_df.merge(
-        right=model_suggestions, on=["Category", "MarketSector"]
-    )
-
+    # Generate forecast with all models
     output_dfs = []
-    for model_suggested, spend_data in spend_data_with_model_suggestions.groupby(
-        "Model Suggested"
-    ):
-        model_suggested = str(model_suggested)
-
-        forecast = model_chooser[model_suggested].create_forecast(
-            input_df=spend_data,
+    for model in models:
+        forecast = model.create_forecast(
+            input_df=input_df,
             months_to_forecast=months_to_forecast,
             start_month=start_month,
         )
-        forecast["Model used"] = model_suggested
+        forecast = forecast.rename(columns={"ForecastSpend": f"{model.name}_Forecast"})
         output_dfs.append(forecast)
 
-    output_df = pd.concat(output_dfs)
+    # Combine the forecast into one dataframe
+    output_df = output_dfs[0]
+    for other_output in output_dfs[1:]:
+        output_df = output_df.merge(
+            other_output, how="outer", on=["Category", "MarketSector", "SpendMonth"]
+        )
+    output_df = output_df.merge(
+        right=model_suggestions, on=["Category", "MarketSector"], how="left"
+    )
+
+    # Copy the forecasted amount from the suggested model to 'Suggested Forecast' column
+    for model_name in pd.unique(output_df["Model Suggested"]):
+        output_df.loc[
+            (output_df["Model Suggested"]) == model_name, "Suggested Forecast"
+        ] = output_df[f"{model_name}_Forecast"]
+
     logger.debug("Finished generating forecast.")
 
     return output_df

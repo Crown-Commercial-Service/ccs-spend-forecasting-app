@@ -3,7 +3,7 @@ import numpy as np
 import datetime
 from typing import Optional
 
-from pipeline.jobs.forecast_model import ForecastModel
+from pipeline.models.forecast_model import ForecastModel
 
 
 class MockForecastModel(ForecastModel):

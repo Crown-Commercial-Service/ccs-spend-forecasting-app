@@ -381,7 +381,7 @@ def save_pandas_dataframe_to_blob(
     pandas_df: pd.DataFrame,
     filename: str,
 ):
-    """Save a pyspark dataframe to blob storage in csv format"""
+    """Save a pandas dataframe to blob storage in csv format"""
 
     if is_running_in_databricks():
         blob_storage_root_path = get_blob_storage_root_path()
@@ -390,7 +390,7 @@ def save_pandas_dataframe_to_blob(
         dbutils = get_dbutils()
         dbutils.fs.mkdirs(f"dbfs:/FileStore/{os.path.dirname(filename)}")
 
-        pandas_df.to_csv(f"/dbfs/FileStore/{filename}")
+        pandas_df.to_csv(f"/dbfs/FileStore/{filename}", index=False)
 
         dbutils.fs.mv(f"dbfs:/FileStore/{filename}", full_path)
 
@@ -401,3 +401,48 @@ def save_pandas_dataframe_to_blob(
         file_buffer.seek(0)
 
         container_client.upload_blob(name=filename, data=file_buffer, overwrite=True)
+
+
+def load_csv_from_blob_to_pandas(
+    table_name: str,
+    blob_container_name: Optional[str] = None,
+    storage_account_name: Optional[str] = None,
+) -> pd.DataFrame:
+    """Load a csv file from blob storage to a pandas dataframe.
+
+    Args:
+        table_name (str): A string that represent the the folder name on blob storage.
+                          It is expected that a blob file with the path "{table_name}/.../{any_file_name}.csv" exists on said blob storage container.
+                          If multiple files meet this criteria, will load the one that is created most recently.
+        blob_container_name (Optional[str], optional): Azure Blob Container name. If omitted, will try to use the default provided in other method in this module.
+        blob_account_name (Optional[str], optional): Azure Blob Account name. If omitted, will try to use the default provided in other method in this module.
+
+    Returns:
+        pd.DataFrame: A pandas dataframe containing the data of said csv file.
+    """
+
+    container_client = get_blob_container_client(
+        container_name=blob_container_name, storage_account_name=storage_account_name
+    )
+
+    candidates = [
+        blob
+        for blob in container_client.list_blobs()
+        if blob.name
+        and blob.name.startswith(f"{table_name}/")
+        and blob.name.endswith(".csv")
+    ]
+    if not candidates:
+        raise ValueError(
+            f"Could not find a csv file in folder {table_name}/ of blob storage"
+        )
+
+    candidates.sort(key=lambda blob: blob.creation_time, reverse=True)
+
+    blob_file_name = str(candidates[0].name)
+    blob_client = container_client.get_blob_client(blob=blob_file_name)
+    file_buffer = BytesIO()
+    blob_client.download_blob().readinto(file_buffer)
+    file_buffer.seek(0)
+
+    return pd.read_csv(file_buffer, index_col=None)

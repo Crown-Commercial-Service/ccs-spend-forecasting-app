@@ -7,12 +7,11 @@ import pandas as pd
 import numpy as np
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 
-from pipeline.jobs.model_utils import (
+from pipeline.models.model_utils import (
     find_integration_order,
     find_seasonal_integration_order,
-    ljung_box_residual_test,
 )
-from pipeline.jobs.forecast_model import ForecastModel
+from pipeline.models.forecast_model import ForecastModel
 from utils import get_logger
 
 logger = get_logger()
@@ -133,10 +132,7 @@ class SarimaModel(ForecastModel):
                 except Exception as err:
                     logger.error(f"Error while searching for hyperparameter: {err}")
                     continue
-            elif (
-                search_hyperparameters
-                and combination not in self._hyperparameters_cache
-            ):
+            elif search_hyperparameters and combination in self._hyperparameters_cache:
                 # already did a search for this combination in current job session. will reuse it to create forecast
                 params = self._hyperparameters_cache[combination]
                 logger.debug(
@@ -161,22 +157,6 @@ class SarimaModel(ForecastModel):
         output_df = pd.concat(output_df_list)
 
         return output_df
-
-    def prepare_input_data(self, input_df: pd.DataFrame) -> pd.DataFrame:
-        """Sum up the spend data by month, so that for each combination, there is only one row for one month.
-        Also strips away any irrelavant columns from input data
-
-        Args:
-            input_df (pd.DataFrame): Input spend data
-
-        Returns:
-            pd.DataFrame: Prepared data
-        """
-
-        #
-        return input_df.groupby(
-            [self.date_column, *self.columns_to_consider], as_index=False
-        ).agg({self.amount_column: "sum"})
 
     def sarima_aic_scores(
         self,
@@ -343,12 +323,22 @@ class SarimaModel(ForecastModel):
         s = default["seasonal_period"]
 
         if default["d"] == "auto":
-            d = find_integration_order(spend)
+            try:
+                d = find_integration_order(spend)
+            except Exception as err:
+                logger.error(f"Error while trying to find integration order: {err}")
+                d = 0
         else:
             d = default["d"]
 
         if default["seasonal_D"] == "auto":
-            D = find_seasonal_integration_order(spend, seasonal_order=s)
+            try:
+                D = find_seasonal_integration_order(spend, seasonal_order=s)
+            except Exception as err:
+                logger.error(
+                    f"Error while trying to find seasonal integration order: {err}"
+                )
+                D = 0
         else:
             D = default["seasonal_D"]
 

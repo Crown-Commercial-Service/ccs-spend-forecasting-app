@@ -1,5 +1,5 @@
 from typing import Optional
-from pipeline.jobs.sarima_model import SarimaModel
+from pipeline.models.sarima_model import SarimaModel
 
 
 class ArmaModel(SarimaModel):
