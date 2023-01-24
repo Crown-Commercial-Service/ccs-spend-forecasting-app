@@ -186,6 +186,7 @@ class SarimaModel(ForecastModel):
                     order=(p, d, q),
                     seasonal_order=(P, D, Q, s),
                     simple_differencing=False,
+                    use_exact_diffuse=True,
                 ).fit(disp=False)
                 aic = model.aic
                 aic_scores.append([p, q, d, P, Q, D, s, aic])
@@ -238,6 +239,7 @@ class SarimaModel(ForecastModel):
             order=order,
             seasonal_order=seasonal_order,
             simple_differencing=False,
+            use_exact_diffuse=True,
         )
 
         # Fit the model and get forecast.
@@ -380,6 +382,7 @@ class SarimaModel(ForecastModel):
             order=order,
             seasonal_order=seasonal_order,
             simple_differencing=False,
+            use_exact_diffuse=True,
         )
         sarima_model_fit = sarima_model.fit(disp=False)
         logger.debug(f"Model fit summary:\n{sarima_model_fit.summary()}")

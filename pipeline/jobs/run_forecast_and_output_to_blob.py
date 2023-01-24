@@ -33,7 +33,7 @@ def main():
 
     It will execute the following tasks:
     1. Fetch latest spend data from Azure blob storage
-    2. Create 4 forecast models (SARIMA/ARIMA/ARMA/Prophet) and compare their performance for each combination, base on the past spend data.
+    2. Create 4 forecast models (SARIMA/ARIMA/Prophet) and compare their performance for each combination, base on the past spend data.
     3. Create forecast with each models, and also add a column of "suggested forecast" which is given by the model that performed best in each combination.
     4. Output the forecast to blob storage.
     """
@@ -41,6 +41,8 @@ def main():
     models = model_choices()
 
     suppress_unwanted_warnings()
+
+    # run each model with spend data to get suggestion for each combination
     model_suggestions = compare_models_performance(input_df, models=models)
 
     today = datetime.date.today()
@@ -50,13 +52,23 @@ def main():
         else today.replace(year=today.year + 1, month=1, day=1)
     )
 
+    # Generate forecast. Currently the period is hardcoded to match EDA forecast period.
     forecast_df = run_forecast_with_all_models(
         input_df=input_df,
         model_suggestions=model_suggestions,
         models=models,
-        months_to_forecast=24,
-        start_month=next_month,
+        months_to_forecast=26,
+        start_month=datetime.date(2022, 12, 1),
     )
+
+    # log the hyperparameter for each model.
+    params_cache = {model.name: model._hyperparameters_cache for model in models}
+    params_df = pd.DataFrame(data=params_cache)
+    logger.debug("Hyperparameters used for each models:\n")
+    logger.debug(params_df)
+    logger.debug("in JSON form (for copy & paste):")
+    logger.debug(params_df.to_json())
+
     output_forecast_to_blob(forecast_df=forecast_df)
 
 
@@ -72,9 +84,6 @@ def fetch_data_from_blob() -> pd.DataFrame:
     spend_data = load_latest_blob_to_pyspark("SpendDataFilledMissingMonth")
 
     active_combinations = load_csv_from_blob_to_pandas("ActiveCombinations")
-
-    # Limit to top 3 combination for temporary demostration purpose.
-    active_combinations = active_combinations.iloc[:3]
 
     ## For development purpose. Uncomment the following lines to manually choose what combinations to use.
     # category_list = [
@@ -119,10 +128,9 @@ def model_choices() -> list[ForecastModel]:
 
     sarima = SarimaModel(search_hyperparameters=True)
     arima = ArimaModel(search_hyperparameters=True)
-    arma = ArmaModel(search_hyperparameters=True)
     prophet = ProphetModel()
 
-    return [sarima, arima, arma, prophet]
+    return [sarima, arima, prophet]
 
 
 def compare_models_performance(
