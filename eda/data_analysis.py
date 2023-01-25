@@ -64,7 +64,10 @@ def get_data_for_analysis(
             sql_filter_condition + f"AND spend.Category = '{category}' "
         )
     if sector:
-        sql_filter_condition = sql_filter_condition + f"AND MarketSector = '{sector}' "
+        sql_filter_condition = (
+            sql_filter_condition
+            + f"AND ISNULL(cust.MarketSector, 'Unassigned') = '{sector}' "
+        )
     sql = f"""
         SELECT
         DATEADD(month,3,CONVERT(date,CONCAT(spend.FYMonthKey,'01'),112)) as SpendMonth,
@@ -438,19 +441,33 @@ def get_aic_scores(
                 order=(p, d, q),
                 seasonal_order=(P, D, Q, s),
                 simple_differencing=False,
+                use_exact_diffuse=True,
+                trend_offset=0,
             ).fit(disp=False)
             aic = model.aic
             aic_scores.append([p, q, d, P, Q, D, s, aic])
         except Exception as e:
-            logger.error(f"Error while calculating aic scores: {e}")
+            error_msg = (
+                "Error while calculating aic scores for hyperparameters: "
+                + f"p = {p}, q = {q}, d = {d}, P = {P}, Q = {Q}, D = {D}, s = {s} with error {e}"
+            )
+            logger.error(error_msg)
 
-    df = (
-        pd.DataFrame(
-            data=aic_scores, columns=["p", "q", "d", "P", "Q", "D", "s", "aic"]
-        )
-        .sort_values(by="aic", ascending=True)
-        .reset_index(drop=True)
+    # Note: We have experimented on different physical machine, where on some machine a particular set of hyperparamter
+    # results in LU decomposition error while on other machine it results very low aic score which seems wrong. The
+    # below code filters those erroneous aic scores
+    df = pd.DataFrame(
+        data=aic_scores, columns=["p", "q", "d", "P", "Q", "D", "s", "aic"]
     )
+    q1 = df["aic"].quantile(0.25)
+    q3 = df["aic"].quantile(0.75)
+    iqr = q3 - q1
+    whisker_width = 1.5
+    df = df.loc[
+        (df["aic"] >= q1 - whisker_width * iqr)
+        & (df["aic"] <= q3 + whisker_width * iqr)
+    ]
+    df = df.sort_values(by="aic", ascending=True).reset_index(drop=True)
 
     return df
 
@@ -702,7 +719,11 @@ def model_arma(df: pd.DataFrame, category: str, sector: str, run: bool = False):
 
             d = 0
             model = SARIMAX(
-                train["diff"], order=(best_p, d, best_q), simple_differencing=False
+                train["diff"],
+                order=(best_p, d, best_q),
+                simple_differencing=False,
+                use_exact_diffuse=True,
+                trend_offset=0,
             )
             model_fit = model.fit(disp=False)
             logger.debug(f"Model fit summary:\n{model_fit.summary()}")
@@ -1003,6 +1024,8 @@ def model_arima(df: pd.DataFrame, category: str, sector: str, run: bool = False)
             train["EvidencedSpend"],
             order=(best_p, d, best_q),
             simple_differencing=False,
+            use_exact_diffuse=True,
+            trend_offset=0,
         )
         model_fit = model.fit(disp=False)
         logger.debug(f"Model fit summary:\n{model_fit.summary()}")
@@ -1206,6 +1229,8 @@ def model_sarima_arima(df: pd.DataFrame, category: str, sector: str, run: bool =
             order=(best_p, d, best_q),
             seasonal_order=(Ps[0], D, Qs[0], s),
             simple_differencing=False,
+            use_exact_diffuse=True,
+            trend_offset=0,
         )
         arima_model_fit = arima_model.fit(disp=False)
         logger.debug(f"Model fit summary:\n{arima_model_fit.summary()}")
@@ -1268,6 +1293,8 @@ def model_sarima_arima(df: pd.DataFrame, category: str, sector: str, run: bool =
             order=(best_p, d, best_q),
             seasonal_order=(best_P, D, best_Q, s),
             simple_differencing=False,
+            use_exact_diffuse=True,
+            trend_offset=0,
         )
         sarima_model_fit = sarima_model.fit(disp=False)
         logger.debug(f"Model fit summary:\n{sarima_model_fit.summary()}")
@@ -1507,6 +1534,8 @@ def model_prophet_sarima_arima(
             order=(best_p, d, best_q),
             seasonal_order=(Ps[0], D, Qs[0], s),
             simple_differencing=False,
+            use_exact_diffuse=True,
+            trend_offset=0,
         )
         arima_model_fit = arima_model.fit(disp=False)
         logger.debug(f"Model fir summary:\n{arima_model_fit.summary()}")
@@ -1551,6 +1580,8 @@ def model_prophet_sarima_arima(
             order=(best_p, d, best_q),
             seasonal_order=(best_P, D, best_Q, s),
             simple_differencing=False,
+            use_exact_diffuse=True,
+            trend_offset=0,
         )
         sarima_model_fit = sarima_model.fit(disp=False)
         try:
@@ -1834,12 +1865,16 @@ def forecast_future_spend(
             order=(best_p, d, best_q),
             seasonal_order=(Ps[0], D, Qs[0], s),
             simple_differencing=False,
+            use_exact_diffuse=True,
+            trend_offset=0,
         )
         best_arima_model = SARIMAX(
             category_sector_spend["EvidencedSpend"],
             order=(best_p, d, best_q),
             seasonal_order=(Ps[0], D, Qs[0], s),
             simple_differencing=False,
+            use_exact_diffuse=True,
+            trend_offset=0,
         )
         arima_model_fit = arima_model.fit(disp=False)
         test["arima_forecast"] = arima_model_fit.get_prediction(
@@ -1867,12 +1902,16 @@ def forecast_future_spend(
             order=(best_p, d, best_q),
             seasonal_order=(best_P, D, best_Q, s),
             simple_differencing=False,
+            use_exact_diffuse=True,
+            trend_offset=0,
         )
         best_sarima_model = SARIMAX(
             category_sector_spend["EvidencedSpend"],
             order=(best_p, d, best_q),
             seasonal_order=(best_P, D, best_Q, s),
             simple_differencing=False,
+            use_exact_diffuse=True,
+            trend_offset=0,
         )
         sarima_model_fit = sarima_model.fit(disp=False)
         test["sarima_forecast"] = sarima_model_fit.get_prediction(
