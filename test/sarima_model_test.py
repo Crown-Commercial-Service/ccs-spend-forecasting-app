@@ -1,5 +1,6 @@
 import datetime
 import pandas as pd
+import numpy as np
 from unittest.mock import MagicMock
 
 from pipeline.models.sarima_model import SarimaModel

@@ -187,6 +187,7 @@ class SarimaModel(ForecastModel):
                     seasonal_order=(P, D, Q, s),
                     simple_differencing=False,
                     use_exact_diffuse=True,
+                    trend_offset=0,
                 ).fit(disp=False)
                 aic = model.aic
                 aic_scores.append([p, q, d, P, Q, D, s, aic])
@@ -240,6 +241,7 @@ class SarimaModel(ForecastModel):
             seasonal_order=seasonal_order,
             simple_differencing=False,
             use_exact_diffuse=True,
+            trend_offset=0,
         )
 
         # Fit the model and get forecast.
@@ -362,8 +364,10 @@ class SarimaModel(ForecastModel):
 
         pqPQ_combinations = list(product(ps, qs, Ps, Qs))
 
-        aic_scores = self.sarima_aic_scores(spend, pqPQ_combinations, d, D, s)
-        logger.debug(f"AIC scores are:\n{aic_scores.head(len(pqPQ_combinations))}")
+        raw_aic_scores = self.sarima_aic_scores(spend, pqPQ_combinations, d, D, s)
+
+        aic_scores = self.clean_aic_scores(df=raw_aic_scores)
+
         lowest_aic_score = aic_scores.iloc[0]
         best_p = int(lowest_aic_score["p"])
         best_q = int(lowest_aic_score["q"])
@@ -383,6 +387,7 @@ class SarimaModel(ForecastModel):
             seasonal_order=seasonal_order,
             simple_differencing=False,
             use_exact_diffuse=True,
+            trend_offset=0,
         )
         sarima_model_fit = sarima_model.fit(disp=False)
         logger.debug(f"Model fit summary:\n{sarima_model_fit.summary()}")
@@ -405,8 +410,41 @@ class SarimaModel(ForecastModel):
         return {"order": order, "seasonal_order": seasonal_order}
 
     def is_param_valid(self, param) -> bool:
+        """Check that all hyperparameters are integer or list of intgers. Return True if all input hyperparameters are valid."""
         if isinstance(param, int):
             return True
         if isinstance(param, Iterable) and all(isinstance(elem, int) for elem in param):
             return True
         return False
+
+    def clean_aic_scores(self, df: pd.DataFrame) -> pd.DataFrame:
+        """A function to remove exceptionally low AIC scores.
+
+            # Note: We have experimented on different physical machine, where on some machine a particular set of hyperparamter
+            # results in LU decomposition error while on other machine it results very low aic score which seems wrong. The
+            # below code filters those erroneous aic scores
+
+        Args:
+            df (pd.DataFrame): DataFrame containing one column named "aic"
+
+        Returns:
+            pd.DataFrame: DataFrame with exceptionally low AIC scores removed
+        """
+        logger.debug("Raw AIC Scores before removing exceptional values:")
+        logger.debug(df)
+
+        q1 = df["aic"].quantile(0.25)
+        q3 = df["aic"].quantile(0.75)
+        iqr = q3 - q1
+        whisker_width = 1.5
+
+        df = df.loc[
+            (df["aic"] >= q1 - whisker_width * iqr)
+            & (df["aic"] <= q3 + whisker_width * iqr)
+        ]
+        output_df = df.sort_values(by="aic", ascending=True).reset_index(drop=True)
+
+        logger.debug("Raw AIC Scores after removing exceptional values:")
+        logger.debug(output_df)
+
+        return output_df
