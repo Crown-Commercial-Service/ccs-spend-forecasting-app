@@ -192,7 +192,11 @@ class SarimaModel(ForecastModel):
                 aic = model.aic
                 aic_scores.append([p, q, d, P, Q, D, s, aic])
             except Exception as e:
-                logger.error(f"Error while calculating SARIMA aic scores: {e}")
+                error_msg = (
+                    "Error while calculating aic scores for hyperparameters: "
+                    + f"p = {p}, q = {q}, d = {d}, P = {P}, Q = {Q}, D = {D}, s = {s} with error {e}"
+                )
+                logger.error(error_msg)
 
         df = (
             pd.DataFrame(
