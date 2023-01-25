@@ -64,7 +64,10 @@ def get_data_for_analysis(
             sql_filter_condition + f"AND spend.Category = '{category}' "
         )
     if sector:
-        sql_filter_condition = sql_filter_condition + f"AND MarketSector = '{sector}' "
+        sql_filter_condition = (
+            sql_filter_condition
+            + f"AND ISNULL(cust.MarketSector, 'Unassigned') = '{sector}' "
+        )
     sql = f"""
         SELECT
         DATEADD(month,3,CONVERT(date,CONCAT(spend.FYMonthKey,'01'),112)) as SpendMonth,
