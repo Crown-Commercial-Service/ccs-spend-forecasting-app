@@ -46,19 +46,20 @@ def main():
     model_suggestions = compare_models_performance(input_df, models=models)
 
     today = datetime.date.today()
-    next_month = (
-        today.replace(month=today.month + 1, day=1)
-        if today.month < 12
-        else today.replace(year=today.year + 1, month=1, day=1)
+    last_month = (
+        today.replace(month=today.month - 1, day=1)
+        if today.month > 1
+        else today.replace(year=today.year - 1, month=12, day=1)
     )
 
-    # Generate forecast. Currently the period is hardcoded to match EDA forecast period.
+    # Generate forecast.
+    # Currently the forecast period is set as from last month, until 24 + 2 months from running time, in order to align with EDA.
     forecast_df = run_forecast_with_all_models(
         input_df=input_df,
         model_suggestions=model_suggestions,
         models=models,
-        months_to_forecast=26,
-        start_month=datetime.date(2022, 12, 1),
+        months_to_forecast=24 + 2,
+        start_month=last_month,
     )
 
     # log the hyperparameter for each model.

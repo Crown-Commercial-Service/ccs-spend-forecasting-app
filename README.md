@@ -184,7 +184,7 @@ This job generate future spend forecast for the future base on spend data.
 Currently it works with the forecast model ARIMA, SARIMA and Prophet.
 It pulls data from the blob storage, generate forecast with all models and output the forecast to blob storage as .csv file. It also make a comparison based on past data to check which model was more accurate for each Category/MarketSector combination.
 
-Note: For the moment, the period of forecasting is hardcoded to be 26 months starting from 2022-12-01. (calendar month)
+Note: For the moment, the period of forecasting is hardcoded to be 24 + 2 months starting from last month.
 This is to allow comparison with EDA code.
 This behaviour can be changed easily in the related python file, by adjusting the argument of method call `run_forecast_with_all_models`.
 
