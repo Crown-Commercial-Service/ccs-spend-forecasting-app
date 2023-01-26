@@ -105,13 +105,34 @@ Below are the steps for running and performing data analysis on your local machi
 -------------------------------------------------------
 ### Data pipeline
 
-Currently there are 3 runnable data pipeline jobs in this repo.
-Each job can be runned as a separate task, or orchestrated in Azure DataFactory to run as a complete workflow.
+Currently there are totally 6 pipeline jobs in this product. 
+3 of them exist in Azure DataFactory `Development-ccs-import-factory`, and the other 3 exist in this repo.
+Below is an overview of all pipeline jobs in this product. 
+![Pipeline_overview diagram](./pipeline_overview.jpg)
 
-#### Before running pipeline jobs
+
+#### Pipeline jobs in Azure DataFactory
+For the 3 pipeline jobs in Azure DataFactory, 
+The first two `ImportDataFromSqlSqlServer` and `FetchSpendDataAndAddColumn` take cares of pulling data from SQLServer to blob storage. 
+The third one `CreateSpendForecast` is a complete end-to-end pipeline forecast workflow of this product, which orchestrates all pipeline activities in this product. It handles all tasks from pulling data from SQL server to saving the forecast result to blob storage.
+With the current full data sets (~140 active combinations of Category/MarketSector), it could take > 24 hours to complete a whole pipeline run.
+
+#### Pipeline jobs in this repo
+The 3 pipeline jobs in this repo handle more complex data processing and the core machine learning and forecasting process. For this reason, they are coded in python and managed in the `pipeline/jobs` folder in this repo.
+Each job can be runned as a separate task to allow granular control and ease development. 
+Also, these task are orchestrated in the above said Azure DataFactory pipeline `CreateSpendForecast` as a complete end-to-end workflow.
+Detail explanation of each pipeline jobs are provided in the following.
+
+#### Before running pipeline jobs in this repo
 If you are running the jobs on a local machine, ensure that you fill in blob account_name and blob access_key in file `config.ini`. Also, run the command `az login` beforehead to authenticate yourself with azure cloud.
 
 If you are running the jobs on Azure cloud environment, ensure infrastructures in repo `Crown-Commercial-Service/ccs-spend-forecasting-infra` and `Crown-Commercial-Service/ccs-spend-forecasting-adf` are properly setup already.
+
+Currently, we use the blob storage account `developmentstorageccs` and container `azp-uks-spend-forecasting-development-transformed` for all pipeline jobs. 
+Pipeline jobs will try to retrieve necessary data from said blob storage container, and will save any output to there as well.
+This setting can be changed by providing different setting in `config.ini`, or editing the default fallback settings in `pipeline/utils.py`.
+
+
 
 #### 1. Fill missing months to spend data
 Related files: [`pipeline/jobs/fill_missing_months.py`]
@@ -181,12 +202,10 @@ Use Azure Data Factory to execute the python file `dbfs:/pipeline/jobs/run_forec
 
 
 
-
 -------------------------------------------------------
 
 ### Testing
-The unit test of this repo is located in `test` directory. You can use the below command in a terminal to run the full \
-test suite:
+The unit test of this repo is located in `test` directory. You can use the below command in a terminal to run the full test suite:
 
 ```shell
 make unit_testing
