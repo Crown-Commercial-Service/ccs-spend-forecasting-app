@@ -210,11 +210,6 @@ class ProphetModel(ForecastModel):
         changepoint_prior_scale_values = [0.001, 0.01, 0.1, 0.5]
         seasonality_prior_scale_values = [0.01, 0.1, 1.0, 10.0]
 
-        # train_size = int(len(category_sector_spend) * 0.9)
-
-        # train_data = category_sector_spend.iloc[:train_size]
-        # test_data = category_sector_spend.iloc[train_size:]
-
         all_mape = []
 
         # loop through 4x4 pairs of prior_scale_values and record the MAPEs each the trial

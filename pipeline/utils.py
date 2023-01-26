@@ -1,4 +1,5 @@
 import os
+import warnings
 from typing import Optional
 from configparser import ConfigParser
 from datetime import date
@@ -446,3 +447,9 @@ def load_csv_from_blob_to_pandas(
     file_buffer.seek(0)
 
     return pd.read_csv(file_buffer, index_col=None)
+
+
+def suppress_unwanted_warnings():
+    """Supress spam warning messages generated during model fitting"""
+    warnings.filterwarnings("ignore", category=UserWarning)
+    warnings.filterwarnings("ignore", category=FutureWarning)

@@ -22,6 +22,7 @@ from pipeline.utils import (
     load_latest_blob_to_pyspark,
     save_pandas_dataframe_to_blob,
     load_csv_from_blob_to_pandas,
+    suppress_unwanted_warnings,
 )
 
 logger = get_logger()
@@ -32,28 +33,43 @@ def main():
 
     It will execute the following tasks:
     1. Fetch latest spend data from Azure blob storage
-    2. Create 3 forecast models (SARIMA/ARIMA/ARMA) and compare their performance for each combination, base on the past spend data
-    3. Create actual forecast of a future period using the models which performed better for each combination
+    2. Create 4 forecast models (SARIMA/ARIMA/Prophet) and compare their performance for each combination, base on the past spend data.
+    3. Create forecast with each models, and also add a column of "suggested forecast" which is given by the model that performed best in each combination.
     4. Output the forecast to blob storage.
     """
     input_df = fetch_data_from_blob()
     models = model_choices()
+
+    suppress_unwanted_warnings()
+
+    # run each model with spend data to get suggestion for each combination
     model_suggestions = compare_models_performance(input_df, models=models)
 
     today = datetime.date.today()
-    next_month = (
-        today.replace(month=today.month + 1, day=1)
-        if today.month < 12
-        else today.replace(year=today.year + 1, month=1, day=1)
+    last_month = (
+        today.replace(month=today.month - 1, day=1)
+        if today.month > 1
+        else today.replace(year=today.year - 1, month=12, day=1)
     )
 
+    # Generate forecast.
+    # Currently the forecast period is set as from last month, until 24 + 2 months from running time, in order to align with EDA.
     forecast_df = run_forecast_with_all_models(
         input_df=input_df,
         model_suggestions=model_suggestions,
         models=models,
-        months_to_forecast=24,
-        start_month=next_month,
+        months_to_forecast=24 + 2,
+        start_month=last_month,
     )
+
+    # log the hyperparameter for each model.
+    params_cache = {model.name: model._hyperparameters_cache for model in models}
+    params_df = pd.DataFrame(data=params_cache)
+    logger.debug("Hyperparameters used for each models:\n")
+    logger.debug(params_df)
+    logger.debug("in JSON form (for copy & paste):")
+    logger.debug(params_df.to_json())
+
     output_forecast_to_blob(forecast_df=forecast_df)
 
 
@@ -69,10 +85,6 @@ def fetch_data_from_blob() -> pd.DataFrame:
     spend_data = load_latest_blob_to_pyspark("SpendDataFilledMissingMonth")
 
     active_combinations = load_csv_from_blob_to_pandas("ActiveCombinations")
-
-    ## For development purpose, here we limit the active combinations to top 10 only.
-    ## Remove the following line to run forecast for all active combinations
-    active_combinations = active_combinations.iloc[:10]
 
     ## For development purpose. Uncomment the following lines to manually choose what combinations to use.
     # category_list = [
@@ -115,12 +127,11 @@ def model_choices() -> list[ForecastModel]:
 
     logger.debug("Instantiating models...")
 
-    sarima = SarimaModel(search_hyperparameters=False)
+    sarima = SarimaModel(search_hyperparameters=True)
     arima = ArimaModel(search_hyperparameters=True)
-    arma = ArmaModel(search_hyperparameters=True)
     prophet = ProphetModel()
 
-    return [sarima, arima, arma, prophet]
+    return [sarima, arima, prophet]
 
 
 def compare_models_performance(

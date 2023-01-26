@@ -1,4 +1,19 @@
+import os
+import sys
+
 from pyspark.sql import DataFrame, functions as F
+
+if "DATABRICKS_RUNTIME_VERSION" in os.environ:
+    sys.path.append(
+        "/dbfs/"
+    )  # add /dbfs/ to path so that import statements works on databricks
+
+from pipeline.utils import (
+    connect_spark_to_blob_storage,
+    load_latest_blob_to_pyspark,
+    make_blob_storage_path,
+    save_dataframe_to_blob,
+)
 
 
 def add_missing_months(
@@ -7,7 +22,11 @@ def add_missing_months(
     amount_column: str = "EvidencedSpend",
     columns_to_consider: list[str] = [],
 ) -> DataFrame:
-    """Receive a dataframe and return a new dataframe with zero-amount placeholder rows added for every missing months
+    """
+    Receive a dataframe and return a new dataframe with zero-amount placeholder rows added for every missing months.
+    The latest date across all combination is taken as the `latest_month`.
+    For every combinations, for the period from the earliest record in until this `latest_month`,
+    if any month in between doesn't have any spending, a placeholder record of amount = 0 will be inserted.
 
     Args:
         df (DataFrame): Input Dataframe
@@ -21,14 +40,21 @@ def add_missing_months(
 
     input_df_columns = df.columns
 
+    latest_month_row = df.select(F.max(date_column)).first()
+    if not latest_month_row:
+        raise ValueError(f"the column {date_column} is missing from input data")
+    latest_month = latest_month_row[0]
+
     all_months_combinations = (
         df.groupBy(columns_to_consider)
-        .agg(F.min(date_column).alias("minMonth"), F.max(date_column).alias("maxMonth"))
+        .agg(
+            F.min(date_column).alias("minMonth"), F.lit(latest_month).alias("maxMonth")
+        )
         .select(
             *columns_to_consider,
             F.expr("sequence(minMonth, maxMonth, interval 1 month)").alias(
                 "possible_months"
-            )
+            ),
         )
         .withColumn(date_column, F.explode("possible_months"))
         .drop("possible_months")
@@ -58,13 +84,6 @@ def fill_missing_months_for_transformed_spend(
         container_name (str, optional): The blob container name to retreieve the input file and to save the output blob. Defaults to "".
     """
 
-    from pipeline.utils import (
-        connect_spark_to_blob_storage,
-        load_latest_blob_to_pyspark,
-        make_blob_storage_path,
-        save_dataframe_to_blob,
-    )
-
     connect_spark_to_blob_storage()
     input_df = load_latest_blob_to_pyspark(
         table_name=input_table_name, blob_container_name=container_name
@@ -84,4 +103,14 @@ def fill_missing_months_for_transformed_spend(
         table_name=output_table_name,
         blob_storage_path=output_path,
         overwrite=True,
+    )
+
+
+if __name__ == "__main__":
+    """Run the pipeline process"""
+
+    fill_missing_months_for_transformed_spend(
+        input_table_name="TransformedSpendData",
+        output_table_name="SpendDataFilledMissingMonth",
+        container_name="azp-uks-spend-forecasting-development-transformed",
     )
