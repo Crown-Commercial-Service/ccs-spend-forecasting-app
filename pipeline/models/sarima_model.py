@@ -254,11 +254,22 @@ class SarimaModel(ForecastModel):
             sarima_pred = sarima_model_fit.get_prediction(
                 start=0, end=total_number_of_months
             ).predicted_mean
+        except np.linalg.LinAlgError as err:
+            # If SARIMAX raise LU Decomposition Error, log the error, retry with enforce_stationarity=False
+            logger.error(f"Exception raised when trying to create forecast: {err}")
+            logger.error(f"current hyperparameters are: {order}, {seasonal_order}")
+            logger.debug("Will retry with enforce_stationarity=False")
+            sarima_pred = self.retry_create_forecast_on_lu_decomposition_error(
+                spend=spend,
+                order=order,
+                seasonal_order=seasonal_order,
+                total_number_of_months=total_number_of_months,
+            )
         except Exception as err:
-            # If the model raise exception, log the error, fill the forecast column with NaN
-            logger.error(f"Exception raised when trying to create forecast {err}")
+            # If the model raise other exception, log the error, fill the forecast column with NaN
+            logger.error(f"Exception raised when trying to create forecast: {err}")
             logger.error(
-                f"Model name: {self.name}, combinations: {category_sector_spend.head(1)[self.columns_to_consider]}"
+                f"Model name: {self.name}, combinations: {tuple(category_sector_spend.loc[0, self.columns_to_consider])}"
             )
             sarima_pred = pd.Series(np.NaN, index=range(total_number_of_months + 1))
 
@@ -291,6 +302,46 @@ class SarimaModel(ForecastModel):
         ]
 
         return output_df
+
+    def retry_create_forecast_on_lu_decomposition_error(
+        self,
+        spend: pd.Series,
+        order: tuple[int, int, int],
+        seasonal_order: tuple[int, int, int, int],
+        total_number_of_months: int,
+    ) -> pd.Series:
+        """Retry create forecast with argument enforce_stationarity=False.
+        This method is called when LU decomposition error occured during final forecasting step.
+
+        Args:
+            spend (pd.Series): spend data of given combination, with only the spend amounts
+            order: parameter (p,d,q) for SARIMA model.
+            seasonal_order: parameter (P,D,Q,m) for SARIMA model.
+            start_month (datetime.date): The first month to make forecast for.
+            months_to_forecast (int): The number of months to make forecast for.
+            total_number_of_months (int): The total number of months to make forecast for.
+
+        Returns:
+            pd.Series: A pandas series that contains the forecast column.
+        """
+        try:
+            sarima_model = SARIMAX(
+                spend,
+                order=order,
+                seasonal_order=seasonal_order,
+                simple_differencing=False,
+                use_exact_diffuse=True,
+                trend_offset=0,
+                enforce_stationarity=False,
+            )
+            sarima_model_fit = sarima_model.fit(disp=False)
+            return sarima_model_fit.get_prediction(
+                start=0, end=total_number_of_months
+            ).predicted_mean
+        except Exception as err:
+            # if enforce_stationarity=False also failed, log the error again, return NaN as forecast
+            logger.error(f"Exception raised when trying to create forecast: {err}")
+            return pd.Series(np.NaN, index=range(total_number_of_months + 1))
 
     def hyperparameter_range(self) -> dict:
         """Return a default set of search range for hyperparameters for this model.
